@@ -1,5 +1,20 @@
 { pkgs, lib, config, inputs, ... }:
 
+let
+  # Shared libraries the app loads at runtime. winit resolves several of these
+  # with dlopen (e.g. libwayland-client), so they must be on LD_LIBRARY_PATH,
+  # not merely present in `packages`.
+  runtimeLibraries = with pkgs; [
+    vulkan-loader
+    libglvnd # libEGL / libGL
+    libxkbcommon
+    wayland # libwayland-client / -cursor / -egl
+    libx11
+    libxcursor
+    libxi
+    libxrandr
+  ];
+in
 {
   # https://devenv.sh/basics/
   env.GREET = "devenv";
@@ -18,20 +33,14 @@
     # Old BuildInputs
     udev
     alsa-lib-with-plugins
-    vulkan-loader
-    xorg.libX11
-    xorg.libXcursor
-    xorg.libXi
-    xorg.libXrandr
-    libxkbcommon
-    wayland
     gcc
-  ];
+  ]
+  ++ runtimeLibraries;
 
   # https://devenv.sh/languages/
   languages.rust = {
     enable = true;
-    #channel = "nightly";
+    channel = "nightly";
     components = [ "rustc" "cargo" "clippy" "rustfmt" "rust-analyzer" ];
   };
 
@@ -50,7 +59,7 @@
   enterShell = ''
     hello         # Run scripts directly
     git --version # Use packages
-    export LD_LIBRARY_PATH=${pkgs.vulkan-loader}/lib:${pkgs.libxkbcommon}/lib:$LD_LIBRARY_PATH
+    export LD_LIBRARY_PATH=${lib.makeLibraryPath runtimeLibraries}:$LD_LIBRARY_PATH
   '';
 
   # https://devenv.sh/tasks/
