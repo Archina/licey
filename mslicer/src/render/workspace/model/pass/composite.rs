@@ -59,8 +59,8 @@ impl CompositePass {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&group_layout)],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -84,14 +84,14 @@ impl CompositePass {
             }),
             primitive: Default::default(),
             depth_stencil: Some(DepthStencilState {
-                depth_compare: CompareFunction::LessEqual,
+                depth_compare: Some(CompareFunction::LessEqual),
                 ..DEPTH_STENCIL_STATE
             }),
             multisample: MultisampleState {
                 count: 4,
                 ..Default::default()
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

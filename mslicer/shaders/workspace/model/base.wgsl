@@ -1,3 +1,5 @@
+enable primitive_index;
+
 @group(0) @binding(0) var<uniform> context: Context;
 @group(0) @binding(1) var<storage, read> selected: array<u32>;
 

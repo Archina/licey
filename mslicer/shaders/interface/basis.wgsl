@@ -17,8 +17,7 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) position: vec4f,
-    @location(1) vertex_index: u32
-
+    @location(1) @interpolate(flat) vertex_index: u32
 }
 
 @vertex

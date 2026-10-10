@@ -90,7 +90,7 @@ impl Deref for Shortcut {
 }
 
 pub fn handle(app: &mut App, ctx: &Context) {
-    let text_field_focused = ctx.wants_keyboard_input();
+    let text_field_focused = ctx.egui_wants_keyboard_input();
     for shortcut in SHORTCUTS {
         if shortcut.input_exclusive && text_field_focused {
             continue;

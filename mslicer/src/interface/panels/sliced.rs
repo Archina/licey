@@ -12,9 +12,9 @@ use std::{
 use const_format::concatcp;
 use egui::{
     Align, Align2, Button, CollapsingHeader, Color32, ComboBox, Context, CursorIcon, DragValue,
-    FontId, FontSelection, Frame, Grid, Id, Image, ImageSource, Layout, ProgressBar, Rect,
-    RichText, ScrollArea, Sense, SidePanel, Slider, StrokeKind, Style, Ui, Vec2, Widget,
-    load::SizedTexture, panel::Side, style::HandleShape, text::LayoutJob, vec2,
+    FontId, FontSelection, Frame, Grid, Id, Image, ImageSource, Layout, Panel, ProgressBar, Rect,
+    RichText, ScrollArea, Sense, Slider, StrokeKind, Style, Ui, Vec2, Widget,
+    load::SizedTexture, style::HandleShape, text::LayoutJob, vec2,
 };
 use egui_phosphor::regular::{
     ARROW_CLOCKWISE, ARROW_COUNTER_CLOCKWISE, CARET_DOWN, CARET_UP, CLOCK, CORNERS_IN, CROSSHAIR,
@@ -251,9 +251,10 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                 });
             });
 
-            SidePanel::new(Side::Right, "sidebar")
+            let mut sidebar_open = app.config.sliced.sidebar;
+            Panel::right("sidebar")
                 .resizable(false)
-                .show_animated_inside(ui, app.config.sliced.sidebar, |ui| {
+                .show_collapsible(ui, &mut sidebar_open, |ui| {
                     ScrollArea::vertical().show(ui, |ui| {
                         sidebar(
                             slice_operation,
@@ -267,6 +268,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                         );
                     })
                 });
+            app.config.sliced.sidebar = sidebar_open;
 
             match &mut result.inner {
                 GenericSliceResult::Raster(raster) => {
@@ -727,7 +729,6 @@ fn sidebar(
                 if response.hovered() {
                     ui.input_mut(|i| {
                         // todo: surely there is a better way...
-                        i.raw_scroll_delta.y = 0.0;
                         i.smooth_scroll_delta.y = 0.0;
                     });
                 }

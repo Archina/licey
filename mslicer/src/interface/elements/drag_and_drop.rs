@@ -10,9 +10,7 @@ pub fn update(app: &mut App, ctx: &Context) {
     ctx.input(|x| {
         let mut open = OpenInto::default();
         for file in x.raw.dropped_files.iter() {
-            if let Some(path) = &file.path {
-                open.insert(path.to_owned());
-            }
+            open.insert(file.path().to_owned());
         }
 
         open.start(app);

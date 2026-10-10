@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use egui::{Theme, ViewportCommand, Visuals};
+use egui::{Theme, Ui, ViewportCommand, Visuals};
 use egui_tracing::EventCollector;
 use egui_wgpu::RenderState;
 use nalgebra::Vector3;
@@ -142,16 +142,18 @@ impl App {
 
 // todo: move more of this or even the whole trait impl to interface
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+
         ctx.request_repaint();
-        self.set_title(ctx);
+        self.set_title(&ctx);
 
         self.project.update();
         self.panels.update(ctx.viewport_rect().width());
         self.fps.update();
         self.history
             .set_max_mesh_size(self.config.ui.history_max_mesh_size);
-        self.popup().render(ctx);
+        self.popup().render(&ctx);
         self.tasks().poll();
 
         // todo: only update the visuals if the theme has changed?
@@ -164,7 +166,7 @@ impl eframe::App for App {
         });
 
         model::process_previews(self);
-        interface::ui(self, ctx);
+        interface::ui(self, ui, &ctx);
     }
 }
 

@@ -34,7 +34,9 @@ impl Panels {
         }
 
         match surface.find_tab(&Tab::Viewport) {
-            Some((ni, ti)) => surface.set_active_tab(ni, ti),
+            Some((ni, ti)) => {
+                let _ = surface.set_active_tab(ni, ti);
+            }
             None => *surface = Tree::new(vec![Tab::Viewport]),
         }
 
@@ -55,7 +57,7 @@ impl Panels {
     /// already exist
     pub fn focus_tab(&mut self, tab: Tab) {
         if let Some(panel) = self.find_tab(&tab) {
-            self.set_active_tab(panel);
+            let _ = self.set_active_tab(panel);
         } else {
             self.main_surface_mut().push_to_first_leaf(tab);
         }

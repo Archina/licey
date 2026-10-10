@@ -1,6 +1,6 @@
 use std::mem;
 
-use egui::{CentralPanel, Context, Frame};
+use egui::{CentralPanel, Context, Frame, Ui};
 use egui_dock::DockArea;
 
 use crate::{core::App, interface::panels::Tabs};
@@ -12,11 +12,11 @@ pub mod popup;
 pub mod shortcuts;
 pub mod tools;
 
-pub fn ui(app: &mut App, ctx: &Context) {
-    elements::ui(app, ctx);
+pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
+    elements::ui(app, ui, ctx);
 
     mem::take(&mut app.state.queue_reset_ui).then(|| app.panels.reset_ui());
-    CentralPanel::default().frame(Frame::NONE).show(ctx, |ui| {
+    CentralPanel::default().frame(Frame::NONE).show(ui, |ui| {
         let mut dock_state = app.panels.take_inner();
         DockArea::new(&mut dock_state)
             .show_leaf_close_all_buttons(false)

@@ -87,7 +87,7 @@ fn download_preview(gcx: &Gcx, texture: &Texture, size: Vector2<u32>) -> RgbaIma
     gcx.device.poll(PollType::wait_indefinitely()).unwrap();
     rx.recv().unwrap();
 
-    let mapped_range = slice.get_mapped_range();
+    let mapped_range = slice.get_mapped_range().unwrap();
     let result = bytemuck::cast_slice::<_, u8>(&mapped_range);
 
     // Convert texture to to RGBA image. Format is *not* guaranteed to be be,

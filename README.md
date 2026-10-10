@@ -1,3 +1,13 @@
+When I saw mslicer - I was amazed, finally a resin slicer that actually works for linux and open source on top of it.
+
+However when I opened it up - dropped in some models and tried to move them around, dread crawled into me. It really felt like I was chained down and might as well have started up a terminal.
+
+I think we can do better here! So I will attempt to port this over to bevy and see if the gizmos will actually hold up and help me the way I want them to.
+
+-----------
+
+mslicer is an amazing project and thank you so much for all the work you have put into it!
+
 # mslicer [![Build][actions-badge]][actions] ![][download-badge] [![][release-badge]][releases]
 
 A high-performance, open-source slicer for MSLA resin printers.

@@ -5,8 +5,7 @@ use nalgebra::Vector2;
 use wgpu::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
     BindingType, Buffer, BufferBindingType, BufferUsages, CommandEncoder, ComputePassDescriptor,
-    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor,
-    PushConstantRange, ShaderStages,
+    ComputePipeline, ComputePipelineDescriptor, Device, PipelineLayoutDescriptor, ShaderStages,
 };
 
 use crate::{
@@ -57,11 +56,8 @@ impl DecompressPass {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[bind_group_layout],
-            push_constant_ranges: &[PushConstantRange {
-                stages: ShaderStages::COMPUTE,
-                range: 0..4,
-            }],
+            bind_group_layouts: &[Some(bind_group_layout)],
+            immediate_size: 4,
         });
 
         let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
@@ -136,7 +132,7 @@ impl DecompressPass {
 
         compute_pass.set_pipeline(&self.pipeline);
         compute_pass.set_bind_group(0, &bind_group, &[]);
-        compute_pass.set_push_constants(0, bytemuck::cast_slice(&[run_count as u32]));
+        compute_pass.set_immediates(0, bytemuck::cast_slice(&[run_count as u32]));
         compute_pass.dispatch_workgroups(workgroups.x, workgroups.y, 1);
     }
 }

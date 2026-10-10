@@ -95,8 +95,8 @@ impl LightingPass {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&group_layout)],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -121,7 +121,7 @@ impl LightingPass {
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -212,6 +212,7 @@ impl LightingPass {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         render_pass.set_pipeline(&self.pipeline);

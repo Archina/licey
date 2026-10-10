@@ -93,19 +93,19 @@ fn main() -> Result<()> {
                         DeviceDescriptor {
                             label: None,
                             required_features: Features::POLYGON_MODE_LINE
-                                | Features::PUSH_CONSTANTS
-                                | Features::SHADER_PRIMITIVE_INDEX,
+                                | Features::IMMEDIATES
+                                | Features::PRIMITIVE_INDEX,
                             required_limits: Limits {
                                 max_buffer_size,
-                                max_storage_buffer_binding_size: max_buffer_size as u32,
+                                max_storage_buffer_binding_size: max_buffer_size,
                                 max_color_attachment_bytes_per_sample: 40,
-                                max_push_constant_size: 4,
+                                max_immediate_size: 4,
                                 ..Limits::default()
                             },
                             ..Default::default()
                         }
                     }),
-                    ..Default::default()
+                    ..WgpuSetupCreateNew::without_display_handle()
                 }),
                 ..Default::default()
             },

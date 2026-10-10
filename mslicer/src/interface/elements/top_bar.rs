@@ -4,7 +4,7 @@ use std::f32::consts::TAU;
 use const_format::concatcp;
 use egui::{
     Align, Align2, Button, Context, FontId, Frame, Grid, Id, Layout, PopupAnchor, ProgressBar,
-    Stroke, StrokeKind, TopBottomPanel, Ui, vec2,
+    Panel, Stroke, StrokeKind, Ui, vec2,
 };
 use egui_phosphor::regular::{CARDS, FILE_TEXT, GIT_DIFF, HAMMER, HOURGLASS, LIFEBUOY, STACK};
 
@@ -26,12 +26,12 @@ const LINK_WEBSITE: &str = "https://mslicer.com";
 const LINK_SOURCE_CODE: &str = "https://github.com/connorslade/mslicer";
 const LINK_REPORT_BUG: &str = "https://github.com/connorslade/mslicer/issues/new";
 
-pub fn ui(app: &mut App, ctx: &Context) {
+pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
     shortcuts::handle(app, ctx);
 
-    TopBottomPanel::top("top_panel")
-        .frame(Frame::side_top_panel(&ctx.style()).inner_margin(4))
-        .show(ctx, |ui| {
+    Panel::top("top_panel")
+        .frame(Frame::side_top_panel(ui.style()).inner_margin(4))
+        .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.style_mut().spacing.item_spacing.x = 4.0;
 

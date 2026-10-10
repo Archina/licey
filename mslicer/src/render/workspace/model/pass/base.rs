@@ -83,8 +83,8 @@ impl BasePass {
         });
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&group_layout)],
+            immediate_size: 0,
         });
 
         let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -93,7 +93,7 @@ impl BasePass {
             vertex: VertexState {
                 module: &shader,
                 entry_point: None,
-                buffers: &[VERTEX_BUFFER_LAYOUT],
+                buffers: &[Some(VERTEX_BUFFER_LAYOUT)],
                 compilation_options: Default::default(),
             },
             fragment: Some(FragmentState {
@@ -130,8 +130,8 @@ impl BasePass {
             primitive: Default::default(),
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(CompareFunction::Less),
                 stencil: StencilState {
                     front: StencilFaceState::IGNORE,
                     back: StencilFaceState::IGNORE,
@@ -145,7 +145,7 @@ impl BasePass {
                 },
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -215,6 +215,7 @@ impl BasePass {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         })
     }
 

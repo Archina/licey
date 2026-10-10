@@ -2,8 +2,8 @@ use std::f32;
 
 use const_format::concatcp;
 use egui::{
-    Color32, Context, DragAndDrop, Frame, Key, Response, ScrollArea, Sense, Stroke, StrokeKind,
-    TopBottomPanel, Ui, Vec2,
+    Color32, Context, DragAndDrop, Frame, Key, Panel, Response, ScrollArea, Sense, Stroke,
+    StrokeKind, Ui, Vec2,
 };
 use egui_phosphor::regular::{COPY, CURSOR_TEXT, EYE, EYE_SLASH, FOLDER_DASHED, SELECTION, TRASH};
 
@@ -50,16 +50,16 @@ pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
         return;
     }
 
-    let pannel = TopBottomPanel::bottom("model_props")
+    let pannel = Panel::bottom("model_props")
         .resizable(false)
         .frame(Frame::new().inner_margin(2.0))
-        .default_height(f32::MAX);
+        .default_size(f32::MAX);
 
     if let Some(id) = app.state.selected.single_model()
         && let Some(model) = app.project.models.iter_mut().position(|x| x.id == id)
     {
         let mut action = UiAction::None;
-        pannel.show_inside(ui, |ui| {
+        pannel.show(ui, |ui| {
             ui.add_space(4.0);
             model_properties(app, ui, ctx, &mut action, model)
         });
@@ -77,12 +77,12 @@ pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
             UiAction::None => {}
         }
     } else if app.state.selected.has_models() {
-        pannel.show_inside(ui, |ui| {
+        pannel.show(ui, |ui| {
             ui.add_space(4.0);
             selection_properties(app, ui);
         });
     } else if let Some(id) = app.state.selected.single_collection() {
-        pannel.show_inside(ui, |ui| {
+        pannel.show(ui, |ui| {
             ui.add_space(4.0);
             collection_properties(app, ui, id);
         });
@@ -185,7 +185,8 @@ fn shortcut(response: Response, key: Key) -> bool {
     });
 
     response.clicked()
-        || (!response.ctx.wants_keyboard_input() && response.ctx.input(|i| i.key_pressed(key)))
+        || (!response.ctx.egui_wants_keyboard_input()
+            && response.ctx.input(|i| i.key_pressed(key)))
 }
 
 fn selection_properties(app: &mut App, ui: &mut Ui) {

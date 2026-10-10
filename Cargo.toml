@@ -4,7 +4,7 @@ default-members = ["mslicer"]
 # `vendor/rustix` is a patched copy of the crates.io `rustix` 0.37.28 (see
 # `[patch.crates-io]` below); keep it out of the workspace so its tests and dev
 # dependencies are not pulled into our lockfile.
-exclude = ["vendor/rustix"]
+exclude = ["vendor/rustix", "vendor/egui_tracing"]
 members = [
     "common",
     "dist/msla_format",
@@ -45,16 +45,16 @@ const_format = "0.2.34"
 crc32fast = "1.5.0"
 criterion = "0.8.1"
 dirs = "6.0.0"
-eframe = { version = "0.33.3", features = ["wgpu", "serde"] }
-egui = "0.33.3"
-egui-phosphor = "0.11.0"
-egui-wgpu = "0.33.3"
-egui_dock = { version = "0.18.0", features = ["serde"] }
-egui_extras = { version = "0.33.3", features = ["image"] }
-egui_plot = "0.34"
-egui_tracing = { git = "https://github.com/Sigma-8214/egui_tracing" }
+eframe = { version = "0.36.2", features = ["wgpu", "serde"] }
+egui = "0.36.2"
+egui-phosphor = "0.14.0"
+egui-wgpu = "0.36.2"
+egui_dock = { version = "0.21.1", features = ["serde"] }
+egui_extras = { version = "0.36.2", features = ["image"] }
+egui_plot = "0.37"
+egui_tracing = { path = "vendor/egui_tracing" }
 encase = "0.12.0"
-epaint_default_fonts = "0.33.3"
+epaint_default_fonts = "0.36.2"
 gerber_parser = "0.5.0"
 hound = "3.5.1"
 image = { version = "=0.25.6", default-features = false, features = ["png"] }
@@ -84,7 +84,7 @@ tracing-subscriber = "0.3.20"
 tungstenite = "0.30.0"
 ureq = { version = "3.3.0", features = ["multipart"] }
 uuid = { version = "1.24.0", features = ["v4"] }
-wgpu = "27.0.1"
+wgpu = "30.0.0"
 windows-registry = "0.6.1"
 winres = "0.1.12"
 zip = "7.2.0"

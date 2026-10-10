@@ -56,7 +56,7 @@ impl BeingEditedExt for Response {
 // todo: don't think the data stored through egui is ever being freed...
 pub fn history_tracked_value(
     (edited, ui, history): (bool, &mut Ui, &mut History),
-    (salt, value): (impl Hash, impl Fn() -> Action),
+    (salt, value): (impl Hash + std::fmt::Debug, impl Fn() -> Action),
 ) {
     let id = ui.next_auto_id().with(salt);
     let old = ui.data_mut(|data| mem::replace(data.get_temp_mut_or(id, edited), edited));

@@ -10,7 +10,7 @@ pub struct Tabs<'a> {
     pub ctx: &'a Context,
 }
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tab {
     Logs,
     Models,

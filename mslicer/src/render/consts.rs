@@ -2,8 +2,8 @@ use wgpu::{
     AddressMode, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout,
     BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType,
     BufferBindingType, BufferDescriptor, BufferUsages, CompareFunction, DepthBiasState,
-    DepthStencilState, Device, FilterMode, SamplerDescriptor, ShaderStages, StencilFaceState,
-    StencilState, TextureFormat,
+    DepthStencilState, Device, FilterMode, MipmapFilterMode, SamplerDescriptor, ShaderStages,
+    StencilFaceState, StencilState, TextureFormat,
 };
 
 pub const DEPTH_TEXTURE_FORMAT: TextureFormat = TextureFormat::Depth24PlusStencil8;
@@ -45,8 +45,8 @@ pub const BASE_BIND_GROUP_LAYOUT_DESCRIPTOR: BindGroupLayoutDescriptor =
 
 pub const DEPTH_STENCIL_STATE: DepthStencilState = DepthStencilState {
     format: DEPTH_TEXTURE_FORMAT,
-    depth_write_enabled: true,
-    depth_compare: CompareFunction::Less,
+    depth_write_enabled: Some(true),
+    depth_compare: Some(CompareFunction::Less),
     stencil: StencilState {
         front: StencilFaceState::IGNORE,
         back: StencilFaceState::IGNORE,
@@ -67,7 +67,7 @@ pub const NONFILTERING_SAMPLER: SamplerDescriptor = SamplerDescriptor {
     address_mode_w: AddressMode::ClampToEdge,
     mag_filter: FilterMode::Nearest,
     min_filter: FilterMode::Nearest,
-    mipmap_filter: FilterMode::Nearest,
+    mipmap_filter: MipmapFilterMode::Nearest,
     lod_min_clamp: 0.0,
     lod_max_clamp: 0.0,
     compare: None,
@@ -82,7 +82,7 @@ pub const FILTERING_SAMPLER: SamplerDescriptor = SamplerDescriptor {
     address_mode_w: AddressMode::ClampToEdge,
     mag_filter: FilterMode::Linear,
     min_filter: FilterMode::Linear,
-    mipmap_filter: FilterMode::Nearest,
+    mipmap_filter: MipmapFilterMode::Nearest,
     lod_min_clamp: 0.0,
     lod_max_clamp: 0.0,
     compare: None,

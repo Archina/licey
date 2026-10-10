@@ -1,4 +1,4 @@
-var<push_constant> runs: u32;
+var<immediate> runs: u32;
 @group(0) @binding(0) var<storage, read> compressed: array<u32>;
 @group(0) @binding(1) var<storage, read_write> uncompressed: array<atomic<u32>>;
 

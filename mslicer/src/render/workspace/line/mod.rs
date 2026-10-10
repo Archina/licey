@@ -140,8 +140,8 @@ impl LinePipeline {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
         });
 
         let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -150,7 +150,7 @@ impl LinePipeline {
             vertex: VertexState {
                 module: &shader,
                 entry_point: None,
-                buffers: &[VERTEX_BUFFER_LAYOUT],
+                buffers: &[Some(VERTEX_BUFFER_LAYOUT)],
                 compilation_options: Default::default(),
             },
             fragment: Some(FragmentState {
@@ -172,7 +172,7 @@ impl LinePipeline {
                 count: 4,
                 ..Default::default()
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

@@ -460,7 +460,7 @@ pub fn exposure_config(ui: &mut Ui, config: &mut ExposureConfig) -> bool {
                     let mut pwm = config.pwm as f32 / 2.55;
                     DragValue::new(&mut pwm)
                         .max_decimals(0)
-                        .suffix('%')
+                        .suffix("%")
                         .ui(ui)
                         .being_edited(&mut editing);
                     config.pwm = (pwm * 2.55).round() as u8;

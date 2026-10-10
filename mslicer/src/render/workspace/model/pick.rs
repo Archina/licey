@@ -107,7 +107,7 @@ impl ModelPicker {
     }
 
     fn download(&mut self, app: &mut App) {
-        let view = self.staging.slice(..).get_mapped_range();
+        let view = self.staging.slice(..).get_mapped_range().unwrap();
         let [model, face] = bytemuck::pod_read_unaligned::<[u32; 2]>(&view);
         drop(view);
         self.staging.unmap();
