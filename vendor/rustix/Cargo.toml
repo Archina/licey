@@ -256,3 +256,12 @@ features = [
 
 [target."cfg(windows)".dev-dependencies.ctor]
 version = "0.2.0"
+
+# PATCHED (licey): this crate predates stable `unexpected_cfgs` checking and
+# relies on many build-script/unstable cfgs. As a path dependency it is not
+# lint-capped by cargo the way a registry dependency is, so silence the noise
+# here rather than in every downstream build log.
+[lints.rust]
+unexpected_cfgs = "allow"
+internal_features = "allow"
+mismatched_lifetime_syntaxes = "allow"

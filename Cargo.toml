@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
 default-members = ["mslicer"]
+# `vendor/rustix` is a patched copy of the crates.io `rustix` 0.37.28 (see
+# `[patch.crates-io]` below); keep it out of the workspace so its tests and dev
+# dependencies are not pulled into our lockfile.
+exclude = ["vendor/rustix"]
 members = [
     "common",
     "dist/msla_format",
@@ -96,3 +100,10 @@ package.mesh_format.opt-level = 3
 package.nanodlp_format.opt-level = 3
 package.slicer.opt-level = 3
 package.tools.opt-level = 3
+
+# rustix 0.37.28 (pulled in by poll-promise -> smol 1 -> async-io 1) does not
+# build on nightly: its build script enables `cfg(rustc_attrs)`, activating
+# attributes removed in rust-lang/rust#155433. The vendored copy removes that
+# cfg emission. See vendor/rustix/build.rs.
+[patch.crates-io]
+rustix = { path = "vendor/rustix" }

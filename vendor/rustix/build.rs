@@ -11,7 +11,19 @@ fn main() {
     // the rustc version.
     println!("cargo:rerun-if-changed=build.rs");
 
-    use_feature_or_nothing("rustc_attrs");
+    // PATCHED (licey): upstream rustix 0.37.28 unconditionally enables
+    // `cfg(rustc_attrs)` whenever `#![feature(rustc_attrs)]` compiles, which is
+    // the case on every nightly. That activates
+    // `rustc_layout_scalar_valid_range_*` / `rustc_nonnull_optimization_guaranteed`
+    // attributes which were removed from rustc in rust-lang/rust#155433, so the
+    // crate no longer builds on nightly.
+    //
+    // The attributes are optimisation hints only (niche optimisation for
+    // OwnedFd/BorrowedFd/Errno); leaving `rustc_attrs` unset is sound and makes
+    // them inert. rustix 0.38+/1.x only enable this behind an explicit opt-in
+    // cfg, so this restores the upstream 0.38 behaviour for the 0.37 line.
+    //
+    // use_feature_or_nothing("rustc_attrs");
 
     // Features only used in no-std configurations.
     #[cfg(not(feature = "std"))]
