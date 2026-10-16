@@ -6,6 +6,7 @@ use egui_phosphor::regular::{CURSOR_CLICK, LINE_SEGMENT, TRIANGLE};
 use egui_tracing::EventCollector;
 use nalgebra::{Matrix4, Vector2, Vector3};
 use slicer::mesh::Mesh;
+use transform_gizmo::Gizmo;
 use wgpu::Device;
 
 use crate::{
@@ -57,6 +58,47 @@ pub struct UiState {
 
     pub tools: Tools,
     pub move_timeout: u32,
+
+    // transform gizmo
+    pub gizmo: Gizmo,
+    pub gizmo_mode: GizmoTransform,
+    pub gizmo_local: bool,
+    pub gizmo_snap: bool,
+    /// Whether the gizmo owned the pointer input on the previous frame. Used to
+    /// stop the camera from orbiting while a handle is hovered or being dragged.
+    pub gizmo_hot: bool,
+    /// The model transform captured at the start of an in-progress drag.
+    pub gizmo_drag: Option<GizmoDrag>,
+}
+
+/// Which handles the transform gizmo shows.
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+pub enum GizmoTransform {
+    #[default]
+    Translate,
+    Rotate,
+    Scale,
+}
+
+impl GizmoTransform {
+    pub const ALL: [Self; 3] = [Self::Translate, Self::Rotate, Self::Scale];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Translate => "Move",
+            Self::Rotate => "Rotate",
+            Self::Scale => "Scale",
+        }
+    }
+}
+
+/// The selected model's transform captured when a gizmo drag starts, used to
+/// build the undo entry once the drag ends.
+pub struct GizmoDrag {
+    pub model: ModelId,
+    pub position: Vector3<f32>,
+    pub rotation: Vector3<f32>,
+    pub scale: Vector3<f32>,
 }
 
 pub struct PreviewModel {

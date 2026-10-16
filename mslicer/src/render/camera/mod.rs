@@ -25,25 +25,35 @@ pub struct Camera {
 
 impl Camera {
     pub fn view_projection_matrix(&self, projection: Projection, aspect: f32) -> Matrix4<f32> {
+        self.projection_matrix(projection, aspect) * self.view_matrix(projection)
+    }
+
+    /// The camera's view matrix for the given projection.
+    ///
+    /// The eye distance differs per projection, so this needs to know which
+    /// projection is in use to stay consistent with [`Self::view_projection_matrix`].
+    pub fn view_matrix(&self, projection: Projection) -> Matrix4<f32> {
+        let distance = match projection {
+            Projection::Perspective => self.distance,
+            Projection::Orthographic => FAR / 2.0,
+        };
+
+        Matrix4::look_at_rh(
+            &(self.position(distance) + self.target).into(),
+            &self.target.into(),
+            &self.up(),
+        )
+    }
+
+    /// The camera's projection matrix for the given projection and aspect ratio.
+    pub fn projection_matrix(&self, projection: Projection, aspect: f32) -> Matrix4<f32> {
         match projection {
-            Projection::Perspective => {
-                Matrix4::new_perspective(aspect, self.fov, NEAR, FAR)
-                    * Matrix4::look_at_rh(
-                        &(self.position(self.distance) + self.target).into(),
-                        &self.target.into(),
-                        &self.up(),
-                    )
-            }
+            Projection::Perspective => Matrix4::new_perspective(aspect, self.fov, NEAR, FAR),
             Projection::Orthographic => {
                 let height = self.distance * (self.fov / 2.0).sin();
                 let width = aspect * height;
 
                 Matrix4::new_orthographic(-width, width, -height, height, -FAR, FAR)
-                    * Matrix4::look_at_rh(
-                        &(self.position(FAR / 2.0) + self.target).into(),
-                        &self.target.into(),
-                        &self.up(),
-                    )
             }
         }
     }
