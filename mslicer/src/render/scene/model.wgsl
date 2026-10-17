@@ -9,6 +9,7 @@
 //
 // The old pass also wrote the picking buffer (`@location(1) model` + the normal and world
 // targets); bevy's scene picking uses `MeshRayCast` instead, so only the colour survives.
+// The old deferred lighting pass is folded in here as a single directional light (see `shade`).
 
 enable primitive_index;
 
@@ -61,6 +62,18 @@ fn is_selected(face: u32) -> bool {
     return ((selected[word] >> bit) & 1u) != 0u;
 }
 
+// The old renderer shaded models in a separate deferred pass (a camera-relative Blinn-Phong
+// light over a normal G-buffer); that pass did not survive the port, which left the models flat.
+// Lighting is folded into the material here instead: one fixed key light in mslicer's Z-up world
+// space plus a constant ambient term. Faces are lit from above/front-left, so orbiting the camera
+// reveals shape without the light following it.
+fn shade(normal: vec3<f32>, is_front: bool) -> f32 {
+    // Nothing is culled: back faces are shaded too, so flip their normal to face the light.
+    let n = select(-normal, normal, is_front);
+    let light = normalize(vec3<f32>(0.45, -0.55, 0.70));
+    return 0.3 + 0.7 * max(dot(n, light), 0.0);
+}
+
 fn outside_build_volume(pos: vec3<f32>) -> bool {
     let build = params.build_volume / 2.0;
     return pos.x < -build.x || pos.x > build.x
@@ -87,7 +100,7 @@ fn render(is_front: bool, world_position: vec3<f32>, index: u32, normal: vec3<f3
             color = select(vec3<f32>(0.5), color, is_front);
             color = select(color, OOB_COLOR, outside_build_volume(world_position));
 
-            return color;
+            return color * shade(normal, is_front);
         }
         // Unreachable: `RenderStyle` has exactly the three cases above.
         default: {

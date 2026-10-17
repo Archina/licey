@@ -12,6 +12,8 @@
   - The model shader is a bevy material now, keeping overhang shading, the render styles, per-face
     selection, the out-of-bounds tint and the back-face colour
   - The sliced-panel preview and the basis widget keep their existing wgpu pipelines
+  - Models are shaded by a simple directional light again; the port had dropped the old deferred
+    lighting pass and rendered them flat
 - Fix a crash when resizing the window: the viewport camera kept pointing at the render image
   that the resize replaced
 - Merge lift and retract distance settings.
