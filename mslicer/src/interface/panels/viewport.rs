@@ -125,8 +125,8 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         );
     }
 
-    Area::new(Id::new("toolbar"))
-        .anchor(Align2::LEFT_TOP, Vec2::splat(10.0))
+    let toolbar = Area::new(Id::new("toolbar"))
+        .fixed_pos(rect.min + Vec2::splat(10.0))
         .constrain_to(rect)
         .show(ui.ctx(), |ui| {
             Frame::new()
@@ -147,7 +147,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                 })
         });
 
-    paint_gizmo_toolbar(app, ui, rect);
+    paint_gizmo_toolbar(app, ui, rect, toolbar.response.rect);
 
     paint_basis_vectors(painter, app, &rect);
 
@@ -270,13 +270,17 @@ impl App {
 }
 
 /// Draw the transform gizmo mode/orientation controls when a model is selected.
-fn paint_gizmo_toolbar(app: &mut App, ui: &Ui, rect: Rect) {
+fn paint_gizmo_toolbar(app: &mut App, ui: &Ui, rect: Rect, toolbar: Rect) {
     if app.state.tool != Tool::Select || app.state.selected.single_model().is_none() {
         return;
     }
 
+    // Sit beside the tool column, not over it: one button width plus the toolbar's padding on
+    // both sides (`toolbar` already spans those) and one more padding of blank space.
+    const GAP: f32 = 8.0;
+
     Area::new(Id::new("gizmo_toolbar"))
-        .anchor(Align2::LEFT_TOP, Vec2::new(10.0, 56.0))
+        .fixed_pos(pos2(toolbar.max.x + GAP, toolbar.min.y))
         .constrain_to(rect)
         .show(ui.ctx(), |ui| {
             Frame::new()

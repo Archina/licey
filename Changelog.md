@@ -14,6 +14,8 @@
   - The sliced-panel preview and the basis widget keep their existing wgpu pipelines
   - Models are shaded by a simple directional light again; the port had dropped the old deferred
     lighting pass and rendered them flat
+  - The transform toolbar (Move/Rotate/Scale/Local/Snap) sits beside the tool buttons instead of
+    overlapping them
 - Fix slicing quitting the app: the slice preview pipeline required a vertex buffer its shader
   does not use
 - Fix a crash when resizing the window: the viewport camera kept pointing at the render image
