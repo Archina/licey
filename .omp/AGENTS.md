@@ -17,6 +17,10 @@ egui/eframe interface runs inside `bevy_egui`, so the UI is still egui.
 - `[patch.crates-io] rustix = "vendor/rustix"` removes a cfg emission that nightly rejects. Do not
   drop the vendor copy without dropping the patch.
 - Tests: `cargo test -p <crate>`; the format and slicing crates hold most of the suite.
+- Build from one toolchain: the ambient shell and `devenv shell` provide different nightly
+  rustc builds (e.g. `2026-10-17` vs `2026-10-09`), and switching between them invalidates every
+  dependency fingerprint — a 40 s incremental build becomes a ~18 min full rebuild. Run the
+  scripts and `cargo` from the same environment (prefer `devenv shell -- …`).
 
 ## Verifying rendering changes
 
