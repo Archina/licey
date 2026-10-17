@@ -37,10 +37,10 @@ use bevy::{
     },
     prelude::*,
     render::render_resource::TextureUsages,
-    window::PrimaryWindow,
+    window::{PrimaryWindow, Window},
 };
 use bevy_egui::PrimaryEguiContext;
-use nalgebra::{Quaternion, Rotation3, UnitQuaternion, Vector3};
+use nalgebra::{Quaternion, Rotation3, UnitQuaternion, Vector2, Vector3};
 
 use crate::{
     core::{
@@ -208,6 +208,7 @@ fn sync_gizmo_settings(
 /// in step with the viewport camera's.
 fn sync_gizmo_cameras(
     app: Option<NonSend<Box<MslicerApp>>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
     mut interaction: Query<
         (
             &mut Camera,
@@ -218,7 +219,7 @@ fn sync_gizmo_cameras(
         (With<InteractionCamera>, Without<GizmoOverlay>),
     >,
     mut overlay: Query<
-        &mut Projection,
+        (&mut Projection, &mut Camera),
         (
             With<GizmoOverlay>,
             Without<InteractionCamera>,
@@ -234,19 +235,55 @@ fn sync_gizmo_cameras(
     let transform = camera_transform(&app.camera, projection);
     let rect = app.state.viewport.rect;
 
+    // The egui layout can trail the window by a frame while it is being resized, and
+    // `bevy_gizmos_render` copies the interaction camera's viewport onto the always-on-top overlay
+    // camera, which renders into the window (`transform_gizmo_render.rs:437`). A rect that no
+    // longer fits that target makes `set_scissor_rect` fail validation and quits the app, so clamp
+    // to the window's physical size — and set it on the overlay camera too, so the plugin's copy
+    // order cannot matter.
+    let target = windows
+        .iter()
+        .next()
+        .map(|window| (window.physical_width(), window.physical_height()));
+    let (min, size) = match target {
+        Some((width, height)) => {
+            // Component-wise by hand: `nalgebra`'s `Matrix::min()` shadows `Ord::min` here.
+            let x = rect.min.x.min(width.saturating_sub(1));
+            let y = rect.min.y.min(height.saturating_sub(1));
+            (
+                Vector2::new(x, y),
+                Vector2::new(rect.size.x.min(width - x), rect.size.y.min(height - y)),
+            )
+        }
+        None => (rect.min, rect.size),
+    };
+    let viewport = (size.x > 0 && size.y > 0).then(|| Viewport {
+        physical_position: UVec2::new(min.x, min.y),
+        physical_size: UVec2::new(size.x, size.y),
+        ..default()
+    });
+
+    // The clamp only bites on the frames around a window resize, when the egui layout still
+    // describes the previous size.
+    if (min, size) != (rect.min, rect.size) {
+        tracing::trace!(
+            "clamped gizmo viewport {:?}+{:?} -> {:?}+{:?} ({target:?})",
+            rect.min,
+            rect.size,
+            min,
+            size
+        );
+    }
+
     // The aspect a projection needs is overwritten by bevy's `camera_system` from each camera's
     // own viewport, but the rect is the closest thing here to the viewport camera's image size.
-    let aspect_size = Vec2::new(rect.size.x.max(1) as f32, rect.size.y.max(1) as f32);
+    let aspect_size = Vec2::new(size.x.max(1) as f32, size.y.max(1) as f32);
 
     if let Some((mut camera, mut camera_transform, mut global, mut projection_slot)) =
         interaction.iter_mut().next()
     {
-        if rect.size.x > 0 && rect.size.y > 0 {
-            camera.viewport = Some(Viewport {
-                physical_position: UVec2::new(rect.min.x, rect.min.y),
-                physical_size: UVec2::new(rect.size.x, rect.size.y),
-                ..default()
-            });
+        if let Some(viewport) = viewport.clone() {
+            camera.viewport = Some(viewport);
         }
 
         // The gizmo's rays must be the viewport camera's rays, or the handles would be picked at a
@@ -258,8 +295,11 @@ fn sync_gizmo_cameras(
 
     // `bevy_gizmos_render` copies the interaction camera's transform and viewport onto the overlay
     // camera but not its projection, which the handles are drawn with.
-    for mut overlay_projection in &mut overlay {
+    for (mut overlay_projection, mut overlay_camera) in &mut overlay {
         *overlay_projection = camera_projection(&app.camera, projection, aspect_size);
+        if let Some(viewport) = viewport.clone() {
+            overlay_camera.viewport = Some(viewport);
+        }
     }
 }
 
