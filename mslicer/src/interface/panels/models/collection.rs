@@ -6,7 +6,7 @@ use egui_phosphor::regular::{FOLDER, FOLDER_OPEN};
 
 use crate::{
     core::{
-        App,
+        App, AppCore,
         project::{CollectionId, RenameState},
     },
     interface::{
@@ -69,12 +69,13 @@ pub fn collection_entry(
     n: &mut usize,
     dragged: bool,
 ) -> Rect {
-    let group = &mut app.project.collections[group];
+    let AppCore { project, state, .. } = &mut app.core;
+    let group = &mut project.collections[group];
 
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::click_and_drag());
 
-    let selected = app.state.selected.contains_collection(group.id);
+    let selected = state.selected.contains_collection(group.id);
     let color = if selected && !dragged {
         ui.visuals().selection.bg_fill
     } else if response.hovered() || dragged {
@@ -90,7 +91,7 @@ pub fn collection_entry(
 
     if response.clicked() {
         group.collapsed ^= selected;
-        app.state
+        state
             .selected
             .collection_clicked(group.id, ui.input(|x| x.modifiers.shift));
     }

@@ -11,7 +11,7 @@ use wgpu::{
 };
 
 use crate::{
-    core::App,
+    core::AppCore,
     include_shader,
     render::{
         Gcx,
@@ -116,7 +116,7 @@ impl FxaaPass {
         }
     }
 
-    pub fn prepare(&mut self, gcx: &Gcx, _app: &mut App, resolution: Vector2<u32>) {
+    pub fn prepare(&mut self, gcx: &Gcx, _app: &mut AppCore, resolution: Vector2<u32>) {
         let mut buffer = UniformBuffer::new(Vec::new());
 
         let uniform = Uniforms { resolution };

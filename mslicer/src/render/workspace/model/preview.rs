@@ -1,7 +1,5 @@
-use egui_wgpu::RenderState;
 use image::{Rgba, RgbaImage, imageops};
 use nalgebra::Vector2;
-use parking_lot::MappedRwLockWriteGuard;
 use tracing::{error, info};
 use wgpu::{
     BufferAddress, BufferDescriptor, BufferUsages, COPY_BYTES_PER_ROW_ALIGNMENT, Extent3d, MapMode,
@@ -10,35 +8,32 @@ use wgpu::{
 };
 
 use crate::{
-    core::App,
+    core::AppCore,
     render::{
         Gcx,
-        workspace::{WorkspaceRenderResources, model::ModelPipeline},
+        workspace::model::ModelPipeline,
     },
 };
 
-pub fn process_previews(app: &mut App) {
+pub fn process_previews(app: &mut AppCore, model: &mut ModelPipeline) {
     if let Some(operation) = &app.slice_operation
         && operation.needs_previews()
     {
         // yes i know im downloading a texture from the gpu and then immediately
         // reuploading it... sue me.
         let preview = &app.config.render.preview;
-        let image = render_preview_image(app, preview.size);
+        let image = render_preview_image(app, model, preview.size);
         let operation = app.slice_operation.as_ref().unwrap();
         operation.add_preview(image);
     }
 }
 
 // TODO: Allow rendering multiple preview images at once
-fn render_preview_image(app: &mut App, size: Vector2<u32>) -> RgbaImage {
+fn render_preview_image(app: &mut AppCore, pipeline: &mut ModelPipeline, size: Vector2<u32>) -> RgbaImage {
     info!("Generating {}x{} preview image", size.x, size.y);
 
     let gcx = app.gcx();
     let mut encoder = gcx.device.create_command_encoder(&Default::default());
-
-    let render_state = app.render_state.clone();
-    let mut pipeline = pipeline(&render_state);
 
     pipeline.prepare_preview(&gcx, &mut encoder, app, size);
     let texture = pipeline.preview.as_ref().unwrap().target_a.clone();
@@ -119,11 +114,3 @@ fn download_preview(gcx: &Gcx, texture: &Texture, size: Vector2<u32>) -> RgbaIma
     image
 }
 
-fn pipeline(render_state: &RenderState) -> MappedRwLockWriteGuard<'_, ModelPipeline> {
-    MappedRwLockWriteGuard::map(render_state.renderer.write(), |x| {
-        &mut (x.callback_resources)
-            .get_mut::<WorkspaceRenderResources>()
-            .unwrap()
-            .model
-    })
-}

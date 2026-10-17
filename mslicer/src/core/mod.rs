@@ -1,11 +1,14 @@
-use std::path::PathBuf;
+use std::{
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+};
 
-use egui::{Theme, Ui, ViewportCommand, Visuals};
+use egui::{Context, Theme, Ui, Visuals};
 use egui_tracing::EventCollector;
-use egui_wgpu::RenderState;
-use nalgebra::Vector3;
+use nalgebra::{Vector2, Vector3};
 use remote_print::manager::RemotePrintManager;
 use tracing::{info, warn};
+use wgpu::{Device, Queue};
 
 use crate::{
     core::{
@@ -21,7 +24,7 @@ use crate::{
         popup::PopupManager,
     },
     render::{
-        Gcx,
+        Gcx, RENDER_TARGET_FORMAT, RenderResources,
         camera::{Camera, spacenav::SpaceNav},
         workspace::model,
     },
@@ -36,7 +39,19 @@ pub mod selected;
 pub mod slice;
 pub mod state;
 
-pub struct App {
+/// The wgpu device and queue bevy created for us.
+#[derive(Clone)]
+pub struct Gpu {
+    pub device: Device,
+    pub queue: Queue,
+}
+
+/// Everything the app owns except its GPU pipelines.
+///
+/// [`App`] derefs to this so the UI code can keep using `app.config`, `app.project`, `app.state`,
+/// ... exactly as before, while `App` itself can hand out `&mut AppCore` and `&mut RenderResources`
+/// at the same time (the render passes need both).
+pub struct AppCore {
     // Core
     pub config_dir: PathBuf,
     pub config: Config,
@@ -46,7 +61,11 @@ pub struct App {
     pub slice_operation: Option<SliceOperation>,
 
     // Rendering
-    pub render_state: RenderState,
+    pub gpu: Gpu,
+    /// Physical size of the window's render target, refreshed once per frame.
+    pub screen_size: Vector2<u32>,
+    /// egui's pixels-per-point, refreshed once per frame.
+    pub pixels_per_point: f32,
     pub panels: Panels,
     pub fps: FpsTracker,
     pub camera: Camera,
@@ -56,11 +75,50 @@ pub struct App {
     pub state: UiState,
     pub popup: PopupManager,
     pub tasks: TaskManager,
+    /// Set by the quit shortcut; the host turns it into an [`bevy::app::AppExit`].
+    pub quit: bool,
+}
+
+pub struct App {
+    pub core: AppCore,
+    pub render: RenderResources,
+}
+
+impl Deref for App {
+    type Target = AppCore;
+
+    fn deref(&self) -> &AppCore {
+        &self.core
+    }
+}
+
+impl DerefMut for App {
+    fn deref_mut(&mut self) -> &mut AppCore {
+        &mut self.core
+    }
+}
+
+impl AppCore {
+    pub fn gcx(&self) -> Gcx {
+        Gcx {
+            device: self.gpu.device.clone(),
+            queue: self.gpu.queue.clone(),
+            texture: RENDER_TARGET_FORMAT,
+        }
+    }
+
+    pub fn title(&self) -> String {
+        if let Some(stem) = self.project.path.as_ref().and_then(|x| x.file_stem()) {
+            format!("mslicer — {}", stem.to_string_lossy())
+        } else {
+            "mslicer".into()
+        }
+    }
 }
 
 impl App {
     pub fn init(
-        render_state: RenderState,
+        gpu: Gpu,
         config_dir: PathBuf,
         mut config: Config,
         event_collector: EventCollector,
@@ -70,26 +128,32 @@ impl App {
 
         let slice_config = config.default_slice_config.clone();
         let mut this = Self {
-            render_state,
-            panels: Panels::new(&mut config),
-            fps: FpsTracker::new(),
-            config_dir,
-            popup: PopupManager::default(),
-            tasks: TaskManager::new(),
-            remote_print: RemotePrintManager::default(),
-            slice_operation: None,
-            camera: Camera::default(),
-            spacenav,
-            state: UiState {
-                event_collector,
-                selected_printer: selected_printer(&config, &slice_config),
-                ..Default::default()
-            },
-            history: History::default(),
-            config,
-            project: Project {
-                slice_config,
-                ..Default::default()
+            render: RenderResources::new(&gpu.device, RENDER_TARGET_FORMAT),
+            core: AppCore {
+                panels: Panels::new(&mut config),
+                fps: FpsTracker::new(),
+                config_dir,
+                popup: PopupManager::default(),
+                tasks: TaskManager::new(),
+                remote_print: RemotePrintManager::default(),
+                slice_operation: None,
+                camera: Camera::default(),
+                spacenav,
+                gpu,
+                screen_size: Vector2::zeros(),
+                pixels_per_point: 1.0,
+                state: UiState {
+                    event_collector,
+                    selected_printer: selected_printer(&config, &slice_config),
+                    ..Default::default()
+                },
+                history: History::default(),
+                config,
+                project: Project {
+                    slice_config,
+                    ..Default::default()
+                },
+                quit: false,
             },
         };
 
@@ -99,9 +163,15 @@ impl App {
 
             // Initial scan
             this.state.remote_print_connecting = RemotePrintConnectStatus::Scanning;
-            this.tasks.add(PrinterScan::new(
-                &this.remote_print,
-                this.config.remote_print.broadcast_address,
+            let AppCore {
+                config,
+                remote_print,
+                tasks,
+                ..
+            } = &mut this.core;
+            tasks.add(PrinterScan::new(
+                remote_print,
+                config.remote_print.broadcast_address,
             ));
         }
 
@@ -112,24 +182,6 @@ impl App {
         is_slicing(&self.slice_operation)
     }
 
-    pub fn gcx(&self) -> Gcx {
-        let state = &self.render_state;
-        Gcx {
-            device: state.device.clone(),
-            queue: state.queue.clone(),
-            texture: state.target_format,
-        }
-    }
-
-    pub fn set_title(&mut self, ctx: &egui::Context) {
-        let title = if let Some(stem) = self.project.path.as_ref().and_then(|x| x.file_stem()) {
-            format!("mslicer — {}", stem.to_string_lossy())
-        } else {
-            "mslicer".into()
-        };
-        ctx.send_viewport_cmd(ViewportCommand::Title(title));
-    }
-
     pub fn hovered_ray(&self) -> Option<(Vector3<f32>, Vector3<f32>)> {
         let projection = self.config.render.projection;
         let workspace @ WorkspaceHover { aspect, uv, .. } = &self.state.workspace;
@@ -138,22 +190,26 @@ impl App {
             .hovered()
             .then(|| self.camera.hovered_ray(projection, *aspect, *uv))
     }
-}
 
-// todo: move more of this or even the whole trait impl to interface
-impl eframe::App for App {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        let ctx = ui.ctx().clone();
+    /// Prepares the shared canvas for a new frame.
+    pub fn begin_frame(&mut self, screen_size: Vector2<u32>, pixels_per_point: f32) {
+        self.core.screen_size = screen_size;
+        self.core.pixels_per_point = pixels_per_point;
+        self.render
+            .canvas
+            .prepare(&self.core.gpu.device, screen_size);
+    }
 
+    /// Runs one frame of the egui UI, which also drives the mslicer render passes.
+    pub fn frame(&mut self, ui: &mut Ui, ctx: &Context) {
         ctx.request_repaint();
-        self.set_title(&ctx);
 
         self.project.update();
         self.panels.update(ctx.viewport_rect().width());
         self.fps.update();
-        self.history
-            .set_max_mesh_size(self.config.ui.history_max_mesh_size);
-        self.popup().render(&ctx);
+        let AppCore { config, history, .. } = &mut self.core;
+        history.set_max_mesh_size(config.ui.history_max_mesh_size);
+        self.popup().render(ctx);
         self.tasks().poll();
 
         // todo: only update the visuals if the theme has changed?
@@ -165,15 +221,15 @@ impl eframe::App for App {
             }
         });
 
-        model::process_previews(self);
-        interface::ui(self, ui, &ctx);
+        model::process_previews(&mut self.core, &mut self.render.workspace.model);
+        interface::ui(self, ui, ctx);
     }
-}
 
-impl Drop for App {
-    fn drop(&mut self) {
+    /// Called when the app is asked to quit.
+    pub fn save_config(&mut self) {
         // todo: save all surfaces (except slice operation?)
-        self.config.ui.panels = Some(self.panels.main_surface().clone());
+        let AppCore { config, panels, .. } = &mut self.core;
+        config.ui.panels = Some(panels.main_surface().clone());
         if let Err(err) = self.config.save(&self.config_dir) {
             warn!("Failed to save config: {}", err);
         } else {

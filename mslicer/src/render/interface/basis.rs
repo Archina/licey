@@ -1,19 +1,24 @@
-use egui::PaintCallbackInfo;
-use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
+use bevy::{
+    prelude::*,
+    render::{render_phase::TrackedRenderPass, sync_world::RenderEntity},
+};
+use bevy_egui::{
+    egui::PaintCallbackInfo, render::EguiBevyPaintCallbackImpl, render::EguiPipelineKey,
+};
 use encase::{ShaderSize, ShaderType, UniformBuffer};
 use nalgebra::{Matrix4, Vector3};
 use slicer::{builder::MeshBuilder, mesh::Mesh};
 use wgpu::{
-    BindGroup, BlendState, Buffer, BufferDescriptor, ColorTargetState, ColorWrites, CommandBuffer,
-    CommandEncoder, Device, FragmentState, IndexFormat, MultisampleState, PipelineLayoutDescriptor,
-    PrimitiveState, Queue, RenderPass, RenderPipeline, RenderPipelineDescriptor, TextureFormat,
-    VertexState,
+    BindGroup, BlendState, Buffer, BufferDescriptor, ColorTargetState, ColorWrites, Device,
+    FragmentState, IndexFormat, MultisampleState, PipelineLayoutDescriptor, PrimitiveState, Queue,
+    RenderPass, RenderPipeline, RenderPipelineDescriptor, TextureFormat, VertexState,
 };
 
 use crate::{
+    core::App,
     include_shader,
     render::{
-        VERTEX_BUFFER_LAYOUT,
+        VERTEX_BUFFER_LAYOUT, ViewportPixels, blit, ensure_blit_pipeline,
         camera::{Camera, FAR},
         consts::{
             BASE_BIND_GROUP_LAYOUT_DESCRIPTOR, BASE_UNIFORM_DESCRIPTOR, DEPTH_STENCIL_STATE,
@@ -23,8 +28,55 @@ use crate::{
     },
 };
 
+/// Renders and presents the orientation basis widget in the viewport's corner.
 pub struct BasisRenderCallback {
+    pub app: *mut App,
     pub camera: Camera,
+}
+
+unsafe impl Send for BasisRenderCallback {}
+unsafe impl Sync for BasisRenderCallback {}
+
+impl EguiBevyPaintCallbackImpl for BasisRenderCallback {
+    fn update(
+        &self,
+        info: PaintCallbackInfo,
+        _render_entity: RenderEntity,
+        key: EguiPipelineKey,
+        world: &mut World,
+    ) {
+        ensure_blit_pipeline(world, key.target_format);
+
+        let app = unsafe { &mut *self.app };
+        let App { core, render } = app;
+
+        render.basis.prepare(&core.gpu.queue, &self.camera);
+
+        let viewport = ViewportPixels::from_info(&info, render.canvas.size());
+        let mut encoder = core.gpu.device.create_command_encoder(&Default::default());
+        if let Some(mut pass) = render.canvas.begin_pass(&mut encoder) {
+            viewport.apply(&mut pass);
+            render.basis.paint(&mut pass);
+        }
+
+        core.gpu.queue.submit(Some(encoder.finish()));
+    }
+
+    fn render<'pass>(
+        &self,
+        _info: PaintCallbackInfo,
+        render_pass: &mut TrackedRenderPass<'pass>,
+        _render_entity: RenderEntity,
+        key: EguiPipelineKey,
+        world: &'pass World,
+    ) {
+        let app = unsafe { &*self.app };
+        let Some(source) = app.render.canvas.resolve_view() else {
+            return;
+        };
+
+        blit(render_pass, &source, &app.render.blit_sampler, key, world);
+    }
 }
 
 pub struct BasisPipeline {
@@ -134,32 +186,6 @@ impl BasisPipeline {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.index_count, 0, 0..1);
-    }
-}
-
-impl CallbackTrait for BasisRenderCallback {
-    fn prepare(
-        &self,
-        _device: &Device,
-        queue: &Queue,
-        _screen: &ScreenDescriptor,
-        _encoder: &mut CommandEncoder,
-        resources: &mut CallbackResources,
-    ) -> Vec<CommandBuffer> {
-        let pipeline = resources.get_mut::<BasisPipeline>().unwrap();
-        pipeline.prepare(queue, &self.camera);
-
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: PaintCallbackInfo,
-        render_pass: &mut RenderPass,
-        resources: &CallbackResources,
-    ) {
-        let pipeline = resources.get::<BasisPipeline>().unwrap();
-        pipeline.paint(render_pass);
     }
 }
 

@@ -9,7 +9,7 @@ use egui_phosphor::regular::{COPY, CURSOR_TEXT, EYE, EYE_SLASH, FOLDER_DASHED, S
 
 use crate::{
     core::{
-        App,
+        App, AppCore,
         history::{Action, ModelAction},
         project::{Collection, CollectionId, RenameState},
     },
@@ -190,16 +190,22 @@ fn shortcut(response: Response, key: Key) -> bool {
 }
 
 fn selection_properties(app: &mut App, ui: &mut Ui) {
+    let AppCore {
+        project,
+        history,
+        state,
+        ..
+    } = &mut app.core;
     ui.horizontal_wrapped(|ui| {
         if shortcut(ui.button(concatcp!(TRASH, " Delete")), DELETE_SHORTCUT) {
-            let selected = app.state.selected.selected_models().collect::<Vec<_>>();
+            let selected = state.selected.selected_models().collect::<Vec<_>>();
             for id in selected {
-                if let Some(index) = app.project.models.iter().position(|x| x.id == id) {
-                    let model = Box::new(app.project.models.remove(index));
-                    app.history.track(Action::ModelRemoved { index, model });
+                if let Some(index) = project.models.iter().position(|x| x.id == id) {
+                    let model = Box::new(project.models.remove(index));
+                    history.track(Action::ModelRemoved { index, model });
                 }
             }
-            app.state.selected.clear();
+            state.selected.clear();
         }
 
         if shortcut(
@@ -208,26 +214,25 @@ fn selection_properties(app: &mut App, ui: &mut Ui) {
         ) {
             let collection = Collection::new_unnamed();
 
-            let selected = app.state.selected.selected_models().collect::<Vec<_>>();
+            let selected = state.selected.selected_models().collect::<Vec<_>>();
             for model_id in selected {
-                if let Some(model) = app.project.models.iter_mut().find(|x| x.id == model_id) {
-                    app.history
+                if let Some(model) = project.models.iter_mut().find(|x| x.id == model_id) {
+                    history
                         .track_model(model_id, ModelAction::Collection(model.collection));
                     model.collection = Some(collection.id);
                 }
             }
 
-            app.history
-                .track(Action::CollectionAdded { id: collection.id });
-            app.project.collections.push(collection);
+            history.track(Action::CollectionAdded { id: collection.id });
+            project.collections.push(collection);
         }
 
         if shortcut(ui.button(concatcp!(COPY, " Duplicate")), DUPLICATE_SHORTCUT) {
-            for id in app.state.selected.selected_models() {
-                if let Some(model) = app.project.models.iter().find(|x| x.id == id) {
+            for id in state.selected.selected_models() {
+                if let Some(model) = project.models.iter().find(|x| x.id == id) {
                     let new = model.clone();
-                    app.history.track(Action::ModelAdded { id: new.id });
-                    app.project.models.push(new);
+                    history.track(Action::ModelAdded { id: new.id });
+                    project.models.push(new);
                 }
             }
         }
@@ -235,34 +240,38 @@ fn selection_properties(app: &mut App, ui: &mut Ui) {
 }
 
 fn collection_properties(app: &mut App, ui: &mut Ui, id: CollectionId) {
+    let AppCore {
+        project,
+        history,
+        state,
+        ..
+    } = &mut app.core;
     ui.horizontal_wrapped(|ui| {
         if shortcut(
             ui.button(concatcp!(CURSOR_TEXT, " Rename")),
             RENAME_SHORTCUT,
-        ) && let Some(collection) = app.project.collection(id)
+        ) && let Some(collection) = project.collection(id)
         {
             collection.rename = RenameState::Starting;
         }
 
         if shortcut(ui.button(concatcp!(TRASH, " Delete")), DELETE_SHORTCUT) {
-            app.state.selected.clear();
+            state.selected.clear();
 
-            for model in app.project.models.iter_mut() {
+            for model in project.models.iter_mut() {
                 if model.collection == Some(id) {
-                    app.history
-                        .track_model(model.id, ModelAction::Collection(Some(id)));
+                    history.track_model(model.id, ModelAction::Collection(Some(id)));
                     model.collection = None;
                 }
             }
 
-            if let Some(index) = app.project.collections.iter().position(|x| x.id == id) {
-                let collection = app.project.collections.remove(index);
-                app.history
-                    .track(Action::CollectionRemoved { index, collection });
+            if let Some(index) = project.collections.iter().position(|x| x.id == id) {
+                let collection = project.collections.remove(index);
+                history.track(Action::CollectionRemoved { index, collection });
             }
         }
 
-        let hidden = (app.project.models.iter())
+        let hidden = (project.models.iter())
             .find(|x| x.collection == Some(id))
             .map(|x| x.hidden)
             .unwrap_or_default();
@@ -271,7 +280,7 @@ fn collection_properties(app: &mut App, ui: &mut Ui, id: CollectionId) {
             concatcp!(EYE, " Show All"),
         ][hidden as usize];
         if shortcut(ui.button(text), HIDE_SHORTCUT) {
-            (app.project.models.iter_mut())
+            (project.models.iter_mut())
                 .filter(|x| x.collection == Some(id))
                 .for_each(|m| m.hidden = !hidden);
         }
@@ -280,9 +289,9 @@ fn collection_properties(app: &mut App, ui: &mut Ui, id: CollectionId) {
             ui.button(concatcp!(SELECTION, " Select Models")),
             SELECT_SHORTCUT,
         ) {
-            (app.project.models.iter())
+            (project.models.iter())
                 .filter(|x| x.collection == Some(id))
-                .for_each(|x| app.state.selected.select_model(x.id));
+                .for_each(|x| state.selected.select_model(x.id));
         }
     });
 }

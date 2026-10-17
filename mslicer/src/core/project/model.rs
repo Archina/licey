@@ -139,10 +139,6 @@ impl Model {
         self
     }
 
-    pub fn try_get_buffers(&self) -> Option<&MeshBuffers> {
-        self.buffers.as_ref()
-    }
-
     pub fn get_buffers(&mut self, device: &Device) -> &MeshBuffers {
         (self.buffers.is_none())
             .then(|| self.buffers = Some(MeshBuffers::get_for(device, &self.mesh)));

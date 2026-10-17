@@ -13,6 +13,8 @@ tools.workspace = true
 
 ab_glyph.workspace = true
 anyhow.workspace = true
+bevy.workspace = true
+bevy_egui.workspace = true
 bitflags.workspace = true
 bytemuck.workspace = true
 chrono.workspace = true
@@ -20,9 +22,7 @@ clone-macro.workspace = true
 concat-idents.workspace = true
 const_format.workspace = true
 dirs.workspace = true
-eframe.workspace = true
 egui-phosphor.workspace = true
-egui-wgpu.workspace = true
 egui.workspace = true
 egui_dock.workspace = true
 egui_extras.workspace = true
@@ -49,8 +49,7 @@ tracing-subscriber.workspace = true
 tracing.workspace = true
 ureq.workspace = true
 wgpu.workspace = true
-transform-gizmo-egui = "0.11.0"
-transform-gizmo = "0.11.0"
+winit.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-registry.workspace = true

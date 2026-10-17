@@ -56,7 +56,7 @@ impl App {
         let platform = slice_config.platform_resolution.cast::<f32>();
         let mm_to_px = platform.component_div(&platform_size).push(1.0);
 
-        let device = &self.render_state.device;
+        let device = &self.gpu.device;
 
         // Transform models from world-space to platform-space
         let mut out = Vec::new();

@@ -17,7 +17,7 @@ use slicer::post_process::{
 
 use crate::{
     core::{
-        App,
+        App, AppCore,
         config::{
             Config,
             printers::{DEFAULT_PRINTERS, Printer},
@@ -44,23 +44,32 @@ const ANTI_ALIAS_TIP: &str = "Uses supersampling anti-aliasing (SSAA) to pick gr
 const TRANSITION_LAYER_TIP: &str = "Transition layers interpolate between the first exposure settings and the normal exposure settings.";
 
 pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
+    let AppCore {
+        project,
+        config,
+        state,
+        history,
+        popup,
+        ..
+    } = &mut app.core;
+
     ui.heading("Slice Config");
 
     ui.add_enabled_ui(
-        app.project.slice_config != app.config.default_slice_config,
+        project.slice_config != config.default_slice_config,
         |ui| {
             ui.horizontal(|ui| {
                 ui.button(concatcp!(ARROW_COUNTER_CLOCKWISE, " Reset to Default"))
                     .clicked()
-                    .then(|| app.project.slice_config = app.config.default_slice_config.clone());
+                    .then(|| project.slice_config = config.default_slice_config.clone());
                 (ui.button(concatcp!(NOTE_PENCIL, " Set Default")).clicked())
-                    .then(|| app.config.default_slice_config = app.project.slice_config.clone());
+                    .then(|| config.default_slice_config = project.slice_config.clone());
             });
         },
     );
     ui.add_space(8.0);
 
-    let slice_config = &mut app.project.slice_config;
+    let slice_config = &mut project.slice_config;
     grid("slice_config").show(ui, |ui| {
         ui.label("Slice Mode");
         let old_mode = slice_config.mode;
@@ -73,7 +82,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                 }
             });
         if slice_config.mode != old_mode {
-            app.history.track(SliceConfigAction::Mode(old_mode).into());
+            history.track(SliceConfigAction::Mode(old_mode).into());
         }
         ui.end_row();
 
@@ -81,20 +90,20 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         ui.horizontal(|ui| {
             ui.style_mut().spacing.item_spacing.x = 4.0;
             ComboBox::from_id_salt("printer")
-                .selected_text(match app.state.selected_printer {
+                .selected_text(match state.selected_printer {
                     SelectedPrinter::Project => Cow::Borrowed("Custom"),
-                    SelectedPrinter::Custom(i) => app.config.printers[i].name.clone(),
+                    SelectedPrinter::Custom(i) => config.printers[i].name.clone(),
                     SelectedPrinter::Preset(brand, model) => {
                         let brand = DEFAULT_PRINTERS[brand];
                         Cow::Owned(format!("{} {}", brand.0, brand.1[model].name))
                     }
                 })
                 .show_ui(ui, |ui| {
-                    printer_presets(ui, &mut app.config, &mut app.state);
+                    printer_presets(ui, config, state);
                 });
 
             if ui.button(PENCIL).clicked() {
-                app.popup
+                popup
                     .open(Popup::new("Edit Your Printer Presets", edit_presets).close_button(true));
             }
         });
@@ -103,13 +112,13 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         let platform = &mut slice_config.platform_size;
         let prev = *platform;
 
-        match app.state.selected_printer {
+        match state.selected_printer {
             SelectedPrinter::Project => {
                 ui.label("Platform Resolution");
                 let old_resolution = slice_config.platform_resolution;
                 let editing = dragger::vec2(ui, slice_config.platform_resolution.as_mut(), |x| x);
                 history_tracked_value(
-                    (editing, ui, &mut app.history),
+                    (editing, ui, &mut *history),
                     ("platform_resolution", || {
                         SliceConfigAction::PlatformResolution(old_resolution).into()
                     }),
@@ -126,7 +135,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                     (DragValue::new(platform.z.raw_mut()).ui(ui)).being_edited(&mut editing);
                 });
                 history_tracked_value(
-                    (editing, ui, &mut app.history),
+                    (editing, ui, &mut *history),
                     ("platform_size", || {
                         SliceConfigAction::PlatformSize(prev).into()
                     }),
@@ -134,14 +143,14 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                 ui.end_row();
             }
             SelectedPrinter::Custom(idx) => {
-                let printer = &app.config.printers[idx];
+                let printer = &config.printers[idx];
                 let (old_resolution, old_size) = (slice_config.platform_resolution, *platform);
                 slice_config.platform_resolution = printer.resolution;
                 *platform = printer.size;
                 if slice_config.platform_resolution != old_resolution || *platform != old_size {
-                    app.history
+                    history
                         .track(SliceConfigAction::PlatformResolution(old_resolution).into());
-                    app.history
+                    history
                         .track(SliceConfigAction::PlatformSize(old_size).into());
                 }
             }
@@ -152,18 +161,18 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                 *platform = printer.size;
 
                 if slice_config.platform_resolution != old_resolution {
-                    app.history
+                    history
                         .track(SliceConfigAction::PlatformResolution(old_resolution).into());
                 }
                 if *platform != old_size {
-                    app.history
+                    history
                         .track(SliceConfigAction::PlatformSize(old_size).into());
                 }
             }
         }
 
         if *platform != prev {
-            (app.project.models.iter_mut())
+            (project.models.iter_mut())
                 .for_each(|model| model.update_oob(&slice_config.platform_size));
         }
 
@@ -179,7 +188,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                 editing = being_edited(&response);
             });
             history_tracked_value(
-                (editing, ui, &mut app.history),
+                (editing, ui, &mut *history),
                 ("slice_height", || {
                     SliceConfigAction::SliceHeight(old_slice_height).into()
                 }),
@@ -196,7 +205,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
             let old_supersample = slice_config.supersample;
             let mut edit = false;
 
-            if app.state.anisotropic_aa {
+            if state.anisotropic_aa {
                 // todo: make it more clear what each slider does
                 DragValue::new(&mut slice_config.supersample.xy)
                     .custom_formatter(|val, _| (val as u32).pow(2).to_string())
@@ -227,14 +236,14 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
             }
 
             history_tracked_value(
-                (edit, ui, &mut app.history),
+                (edit, ui, &mut *history),
                 ("supersample", || {
                     SliceConfigAction::Supersample(old_supersample).into()
                 }),
             );
 
-            app.state.anisotropic_aa ^= ui
-                .button([LINK_SIMPLE, LINK_BREAK][app.state.anisotropic_aa as usize])
+            state.anisotropic_aa ^= ui
+                .button([LINK_SIMPLE, LINK_BREAK][state.anisotropic_aa as usize])
                 .clicked();
         });
         ui.end_row();
@@ -247,7 +256,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
             &mut slice_config.first_layers,
         );
         history_tracked_value(
-            (changed, ui, &mut app.history),
+            (changed, ui, &mut *history),
             ("first_layers", || {
                 SliceConfigAction::FirstLayers(old_first_layers).into()
             }),
@@ -265,7 +274,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
             &mut slice_config.transition_layers,
         );
         history_tracked_value(
-            (changed, ui, &mut app.history),
+            (changed, ui, &mut *history),
             ("transition_layers", || {
                 SliceConfigAction::TransitionLayers(old_transition_layers).into()
             }),
@@ -277,7 +286,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
     ui.collapsing("Normal Layers", |ui| {
         let editing = exposure_config(ui, &mut slice_config.exposure_config);
         history_tracked_value(
-            (editing, ui, &mut app.history),
+            (editing, ui, &mut *history),
             ("normal_exposure", || {
                 SliceConfigAction::NormalExposure(slice_config.exposure_config.clone()).into()
             }),
@@ -287,7 +296,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
     ui.collapsing("First Layers", |ui| {
         let editing = exposure_config(ui, &mut slice_config.first_exposure_config);
         history_tracked_value(
-            (editing, ui, &mut app.history),
+            (editing, ui, &mut *history),
             ("first_exposure", || {
                 SliceConfigAction::FirstExposure(slice_config.first_exposure_config.clone()).into()
             }),
@@ -300,12 +309,12 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
     ui.collapsing("Exposure Remapping", |ui| {
         exposure_remapping(
             &mut slice_config.exposure_remap,
-            &mut app.state.selected_remap_point,
+            &mut state.selected_remap_point,
             ui,
         );
-        let editing = app.state.selected_remap_point.is_some();
+        let editing = state.selected_remap_point.is_some();
         history_tracked_value(
-            (editing, ui, &mut app.history),
+            (editing, ui, &mut *history),
             ("exposure_remap", || {
                 SliceConfigAction::ExposureRemap(slice_config.exposure_remap.clone()).into()
             }),
@@ -313,7 +322,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         ui.add_space(8.0);
     });
 
-    let post_processing = &mut app.project.post_processing;
+    let post_processing = &mut project.post_processing;
 
     let old_variable_layer_height = post_processing.variable_layer_height.clone();
     let mut editing = false;
@@ -325,11 +334,11 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         ui,
     );
     if post_processing.variable_layer_height.enabled != old_variable_layer_height.enabled {
-        app.history
+        history
             .track(SliceConfigAction::VariableLayerHeight(old_variable_layer_height).into());
     }
     history_tracked_value(
-        (editing, ui, &mut app.history),
+        (editing, ui, &mut *history),
         ("variable_layer_height", || {
             SliceConfigAction::VariableLayerHeight(post_processing.variable_layer_height.clone())
                 .into()
@@ -346,11 +355,11 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         ui,
     );
     if post_processing.elephant_foot_fixer.enabled != old_elephant_foot_fixer.enabled {
-        app.history
+        history
             .track(SliceConfigAction::ElephantFootFixer(old_elephant_foot_fixer).into());
     }
     history_tracked_value(
-        (editing, ui, &mut app.history),
+        (editing, ui, &mut *history),
         ("elephant_foot_fixer", || {
             SliceConfigAction::ElephantFootFixer(post_processing.elephant_foot_fixer.clone()).into()
         }),

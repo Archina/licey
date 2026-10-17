@@ -8,9 +8,6 @@ use tools::supports::{
     mesh::{FaceMap, SupportPreset, Transform, build_raft},
 };
 use tracing::info;
-use wgpu::Device;
-
-use crate::render::util::MeshBuffers;
 
 #[derive(Default)]
 pub struct Supports {
@@ -20,7 +17,6 @@ pub struct Supports {
 
     resolution: u32,
     mesh: Option<(Mesh, FaceMap)>,
-    buffers: Option<MeshBuffers>,
 }
 
 impl Supports {
@@ -30,7 +26,6 @@ impl Supports {
 
     pub fn invalidate_cache(&mut self) {
         self.mesh.take();
-        self.buffers.take();
     }
 
     pub fn clear(&mut self) {
@@ -121,23 +116,6 @@ impl Supports {
     pub fn support_for_face(&mut self, face: u32) -> Option<SupportId> {
         let (_, map) = self.mesh().as_ref()?;
         (map.iter().find(|(_, r)| r.contains(&face))).map(|(id, _)| *id)
-    }
-
-    pub fn get_buffers(&mut self, device: &Device) -> &Option<MeshBuffers> {
-        if self.buffers.is_none()
-            && let Some((mesh, _)) = self.mesh()
-        {
-            self.buffers = Some(MeshBuffers::get_for(device, mesh));
-        }
-
-        &self.buffers
-    }
-
-    pub fn try_get_buffers(&self) -> Option<(&MeshBuffers, u32)> {
-        self.buffers.as_ref().map(|x| {
-            let face_count = self.mesh.as_ref().unwrap().0.face_count() as u32 * 3;
-            (x, face_count)
-        })
     }
 
     // kickin it old school rn

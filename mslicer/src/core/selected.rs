@@ -151,13 +151,6 @@ impl SelectedSupports {
         self.supports.clear();
     }
 
-    pub fn for_model(&self, model: ModelId) -> impl Iterator<Item = SupportId> {
-        self.supports
-            .iter()
-            .filter(move |x| x.model == model)
-            .map(|x| x.support)
-    }
-
     pub fn count(&self) -> usize {
         self.supports.len()
     }

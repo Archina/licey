@@ -5,7 +5,10 @@ use egui_phosphor::regular::{SELECTION_INVERSE, SPARKLE, TRASH};
 use slicer::builder::MeshBuilder;
 use tools::supports::auto::{AutoPlacement, route_support};
 
-use crate::{core::App, interface::components::grid};
+use crate::{
+    core::{App, AppCore},
+    interface::components::grid,
+};
 
 pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
     let support_mode = &mut app.state.support_mode;
@@ -17,7 +20,8 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
 
     if *support_mode {
         // edit
-        let selected = &mut app.state.selected_supports;
+        let AppCore { project, state, .. } = &mut app.core;
+        let selected = &mut state.selected_supports;
         let selected_count = selected.count();
 
         if selected_count == 0 {
@@ -34,7 +38,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
             ui.horizontal_wrapped(|ui| {
                 if ui.button(concatcp!(TRASH, " Delete")).clicked() {
                     for support in selected.iter() {
-                        let model = app.project.model(support.model).unwrap();
+                        let model = project.model(support.model).unwrap();
                         model.supports.remove(support.support);
                         model.supports.invalidate_cache();
                     }
@@ -51,14 +55,14 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         ui.collapsing("Mesh", |ui| {
             grid("mesh").show(ui, |ui| {
                 ui.label("Resolution");
-                DragValue::new(&mut app.project.support_config.mesh_resolution).ui(ui);
+                DragValue::new(&mut project.support_config.mesh_resolution).ui(ui);
                 ui.end_row();
             });
         });
 
         ui.collapsing("Raft", |ui| {
             grid("raft").show(ui, |ui| {
-                let config = &mut app.project.support_config;
+                let config = &mut project.support_config;
 
                 ui.label("Height");
                 config.raft_height.with::<Milimeter, _>(|x| {
@@ -91,11 +95,12 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
         });
 
         ui.add_space(8.0);
-        let config = &mut app.project.support_config.auto_placement;
         ui.collapsing("Auto Placement", |ui| {
+            let AppCore { project, .. } = &mut app.core;
+            let config = &mut project.support_config.auto_placement;
             grid("auto_placement").show(ui, |ui| {
                 ui.label("Default Lift");
-                (app.project.support_config.default_lift)
+                (project.support_config.default_lift)
                     .with::<Milimeter, _>(|x| DragValue::new(x).suffix(" mm").ui(ui));
                 ui.end_row();
 
@@ -130,21 +135,22 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
 }
 
 fn generate_support(app: &mut App, model: usize) {
-    let default_lift = app.project.support_config.default_lift.get::<Milimeter>();
+    let AppCore { project, .. } = &mut app.core;
+    let default_lift = project.support_config.default_lift.get::<Milimeter>();
 
-    let model = &mut app.project.models[model];
+    let model = &mut project.models[model];
     let pos = model.mesh.position();
     model.set_position(
-        &app.project.slice_config.platform_size,
+        &project.slice_config.platform_size,
         pos.xy().push(pos.z.max(default_lift)),
     );
 
     let half_edge = model.half_edge.as_ref().unwrap();
     let bvh = model.bvh.as_ref().unwrap();
 
-    let support_placement = &app.project.support_config.auto_placement;
-    let support_preset = &app.project.support_config.presets[0];
-    let platform_size = app.project.slice_config.platform_size.map(|x| x.convert());
+    let support_placement = &project.support_config.auto_placement;
+    let support_preset = &project.support_config.presets[0];
+    let platform_size = project.slice_config.platform_size.map(|x| x.convert());
 
     let generator = AutoPlacement::new(support_placement, support_preset, platform_size);
     let supports = generator.generate_supports(&model.mesh, half_edge, bvh);
@@ -161,8 +167,9 @@ pub fn manual_support_placement(app: &mut App, clicked: bool) {
         return;
     };
 
+    let AppCore { project, .. } = &mut app.core;
     let mut builder = MeshBuilder::new();
-    for model in app.project.models.iter_mut() {
+    for model in project.models.iter_mut() {
         let Some(bvh) = model.bvh.as_ref() else {
             continue;
         };
@@ -171,7 +178,7 @@ pub fn manual_support_placement(app: &mut App, clicked: bool) {
             continue;
         };
 
-        let config = &app.project.support_config.presets[0];
+        let config = &project.support_config.presets[0];
         let tip_r = config.tip_radius.get::<Milimeter>();
 
         let normal = (model.mesh).transform_normal(&model.mesh.normal(intersection.face));

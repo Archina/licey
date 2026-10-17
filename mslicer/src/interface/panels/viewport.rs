@@ -1,22 +1,18 @@
+use bevy_egui::render::EguiBevyPaintCallback;
 use egui::{
     Align2, Area, Button, Color32, Context, Frame, Id, Key, Order, Painter, Pos2, Rect, RichText,
     Sense, Stroke, StrokeKind, Theme, Ui, Vec2, Widget, pos2, vec2,
 };
-use egui_wgpu::Callback;
-use nalgebra::{Matrix4, Quaternion, Rotation3, UnitQuaternion, Vector3};
-use transform_gizmo::math::{DMat4, Transform};
-use transform_gizmo::prelude::{EnumSet, GizmoConfig, GizmoMode, GizmoOrientation, mint};
-use transform_gizmo_egui::prelude::GizmoExt;
+use nalgebra::{Rotation3, Vector2, Vector3};
 
 use crate::{
     core::{
-        App,
+        App, AppCore,
         config::ui::HoverOverlay,
-        history::ModelAction,
-        state::{GeometryHit, GizmoDrag, GizmoTransform, Tool, WorkspaceHover},
+        state::{GeometryHit, GizmoTransform, Tool, ViewportRect, WorkspaceHover},
     },
     interface::{components::grid, panels::supports::manual_support_placement},
-    render::{interface::basis::BasisRenderCallback, workspace::WorkspaceRenderCallback},
+    render::interface::basis::BasisRenderCallback,
 };
 
 #[rustfmt::skip]
@@ -51,16 +47,17 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
     if response.clicked() && !is_moving && !gizmo_hot {
         match app.state.tool {
             Tool::Select => {
-                if let Some(hover) = app.state.hovered_geometry {
+                let AppCore { project, state, .. } = &mut app.core;
+                if let Some(hover) = state.hovered_geometry {
                     let shift = ui.input(|x| x.modifiers.shift);
                     if hover.support {
-                        if let Some(model) = app.project.model(hover.model)
+                        if let Some(model) = project.model(hover.model)
                             && let Some(support) = model.supports.support_for_face(hover.face)
                         {
-                            (app.state.selected_supports).support_clicked(model.id, support);
+                            (state.selected_supports).support_clicked(model.id, support);
                         }
                     } else {
-                        app.state.selected.model_clicked(hover.model, shift);
+                        state.selected.model_clicked(hover.model, shift);
                     }
                 }
             }
@@ -97,14 +94,36 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
     };
     painter.rect_filled(rect, 0.0, color);
 
-    painter.add(Callback::new_paint_callback(
-        rect,
-        app.get_workspace_render_callback(),
-    ));
-
-    // Interact with and draw the gizmo after the 3D callback so it renders on top.
-    let gizmo_hot = paint_gizmo(app, ui, rect);
-    app.state.gizmo_hot = gizmo_hot;
+    // Tell the scene how big the viewport is, in physical pixels, then draw the image the bevy
+    // camera renders into it. The size only takes effect next frame (the camera renders before the
+    // dock layout is known), which is invisible for a docked tab.
+    let ppp = ui.ctx().pixels_per_point();
+    app.state.viewport.target_size = Vector2::new(
+        (rect.width() * ppp).round() as u32,
+        (rect.height() * ppp).round() as u32,
+    );
+    // Where this viewport sits on the window. The transform gizmo hit-tests through a camera whose
+    // `viewport` is this rect, so it must be in window pixels (`render::scene::gizmo`).
+    app.state.viewport.rect = ViewportRect {
+        min: Vector2::new(
+            (rect.min.x * ppp).round() as u32,
+            (rect.min.y * ppp).round() as u32,
+        ),
+        size: Vector2::new(
+            (rect.width() * ppp).round() as u32,
+            (rect.height() * ppp).round() as u32,
+        ),
+        logical: rect,
+    };
+    app.state.viewport.painted = true;
+    if let Some(texture) = app.state.viewport.texture_id {
+        painter.image(
+            texture,
+            rect,
+            Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    }
 
     Area::new(Id::new("toolbar"))
         .anchor(Align2::LEFT_TOP, Vec2::splat(10.0))
@@ -161,11 +180,9 @@ fn paint_basis_vectors(painter: &Painter, app: &mut App, rect: &Rect) {
     painter.rect_filled(rect, size / 2.0, color_bg);
     painter.rect_stroke(rect, size / 2.0, stroke, StrokeKind::Outside);
 
-    painter.add(Callback::new_paint_callback(
+    painter.add(EguiBevyPaintCallback::new_paint_callback(
         rect.expand(-pad),
-        BasisRenderCallback {
-            camera: app.camera.clone(),
-        },
+        app.get_basis_render_callback(),
     ));
 }
 
@@ -244,184 +261,12 @@ fn format_normal(normal: &Vector3<f32>) -> String {
 }
 
 impl App {
-    pub fn get_workspace_render_callback(&mut self) -> WorkspaceRenderCallback {
-        WorkspaceRenderCallback {
-            app: self as *mut _,
+    pub fn get_basis_render_callback(&mut self) -> BasisRenderCallback {
+        BasisRenderCallback {
+            app: self as *mut App,
+            camera: self.camera.clone(),
         }
     }
-
-    pub fn view_projection(&self) -> Matrix4<f32> {
-        let aspect = self.state.workspace.aspect;
-        self.camera
-            .view_projection_matrix(self.config.render.projection, aspect)
-    }
-}
-
-/// The gizmo handle sets shown for each [`GizmoTransform`].
-fn gizmo_modes(mode: GizmoTransform) -> EnumSet<GizmoMode> {
-    match mode {
-        GizmoTransform::Translate => GizmoMode::all_translate(),
-        GizmoTransform::Rotate => GizmoMode::all_rotate(),
-        GizmoTransform::Scale => GizmoMode::all_scale(),
-    }
-}
-
-/// Build a gizmo transform from a model's position, Euler rotation, and scale.
-fn gizmo_target(
-    position: Vector3<f32>,
-    rotation: Vector3<f32>,
-    scale: Vector3<f32>,
-) -> Transform {
-    // The mesh transform uses `Matrix4::from_euler_angles`, which is exactly
-    // `Rotation3::from_euler_angles(..).to_homogeneous()`, so this matches it.
-    let rot = Rotation3::from_euler_angles(
-        rotation.x as f64,
-        rotation.y as f64,
-        rotation.z as f64,
-    );
-    let coords = UnitQuaternion::from_rotation_matrix(&rot).quaternion().coords;
-
-    Transform {
-        scale: mint::Vector3 {
-            x: scale.x as f64,
-            y: scale.y as f64,
-            z: scale.z as f64,
-        },
-        rotation: mint::Quaternion {
-            v: mint::Vector3 {
-                x: coords[0],
-                y: coords[1],
-                z: coords[2],
-            },
-            s: coords[3],
-        },
-        translation: mint::Vector3 {
-            x: position.x as f64,
-            y: position.y as f64,
-            z: position.z as f64,
-        },
-    }
-}
-
-/// Convert a nalgebra column-major matrix into the row-major f64 form the gizmo wants.
-fn mint_matrix(matrix: &Matrix4<f32>) -> mint::RowMatrix4<f64> {
-    let mut cols = [0.0f64; 16];
-    for (i, value) in matrix.as_slice().iter().enumerate() {
-        cols[i] = *value as f64;
-    }
-
-    DMat4::from_cols_array(&cols).into()
-}
-
-/// Interact with and draw the transform gizmo for the single selected model.
-///
-/// Returns whether the gizmo claimed the pointer this frame (hovered a handle
-/// or is being dragged), which suppresses camera orbiting.
-fn paint_gizmo(app: &mut App, ui: &Ui, rect: Rect) -> bool {
-    if app.state.tool != Tool::Select {
-        app.state.gizmo_drag = None;
-        return false;
-    }
-
-    let Some(id) = app.state.selected.single_model() else {
-        app.state.gizmo_drag = None;
-        return false;
-    };
-
-    let platform = app.project.slice_config.platform_size;
-    let (position, rotation, scale) = match app.project.model(id) {
-        Some(model) => (
-            model.mesh.position(),
-            model.mesh.rotation(),
-            model.mesh.scale(),
-        ),
-        None => return false,
-    };
-
-    let projection = app.config.render.projection;
-    let aspect = rect.width() / rect.height();
-    let view = mint_matrix(&app.camera.view_matrix(projection));
-    let projection = mint_matrix(&app.camera.projection_matrix(projection, aspect));
-
-    app.state.gizmo.update_config(GizmoConfig {
-        view_matrix: view,
-        projection_matrix: projection,
-        viewport: rect,
-        modes: gizmo_modes(app.state.gizmo_mode),
-        orientation: if app.state.gizmo_local {
-            GizmoOrientation::Local
-        } else {
-            GizmoOrientation::Global
-        },
-        snapping: app.state.gizmo_snap,
-        ..Default::default()
-    });
-
-    let result = app
-        .state
-        .gizmo
-        .interact(ui, &[gizmo_target(position, rotation, scale)]);
-    let interacted = result.is_some();
-
-    if let Some((_, transforms)) = result {
-        // Capture the pre-drag transform once so the drag becomes a single undo entry.
-        if app.state.gizmo_drag.is_none() {
-            app.state.gizmo_drag = Some(GizmoDrag {
-                model: id,
-                position,
-                rotation,
-                scale,
-            });
-        }
-
-        let new = transforms[0];
-        let translation = Vector3::new(
-            new.translation.x as f32,
-            new.translation.y as f32,
-            new.translation.z as f32,
-        );
-        let scale = Vector3::new(new.scale.x as f32, new.scale.y as f32, new.scale.z as f32);
-        let quat = UnitQuaternion::from_quaternion(Quaternion::new(
-            new.rotation.s,
-            new.rotation.v.x,
-            new.rotation.v.y,
-            new.rotation.v.z,
-        ));
-        let (roll, pitch, yaw) = Rotation3::from(quat).euler_angles();
-        let rotation = Vector3::new(roll as f32, pitch as f32, yaw as f32);
-
-        if let Some(model) = app.project.model(id) {
-            model.set_position(&platform, translation);
-            model.set_rotation(&platform, rotation);
-            model.set_scale(&platform, scale);
-        }
-    } else if let Some(drag) = app.state.gizmo_drag.take() {
-        // Drag ended: commit an undo entry per transform that actually changed.
-        let current = app.project.model(drag.model).map(|model| {
-            (
-                model.mesh.position(),
-                model.mesh.rotation(),
-                model.mesh.scale(),
-            )
-        });
-
-        if let Some((position, rotation, scale)) = current {
-            if position != drag.position {
-                app.history
-                    .track_model(drag.model, ModelAction::Position(drag.position));
-            }
-            if rotation != drag.rotation {
-                app.history
-                    .track_model(drag.model, ModelAction::Rotation(drag.rotation));
-            }
-            if scale != drag.scale {
-                app.history
-                    .track_model(drag.model, ModelAction::Scale(drag.scale));
-            }
-        }
-    }
-
-    interacted || app.state.gizmo.is_focused()
 }
 
 /// Draw the transform gizmo mode/orientation controls when a model is selected.

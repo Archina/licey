@@ -11,7 +11,7 @@ use wgpu::{
 };
 
 use crate::{
-    core::App,
+    core::AppCore,
     include_shader,
     render::{
         Gcx,
@@ -129,7 +129,7 @@ impl SsaoPass {
         }
     }
 
-    pub fn prepare(&mut self, gcx: &Gcx, app: &mut App, view_projection: Matrix4<f32>) {
+    pub fn prepare(&mut self, gcx: &Gcx, app: &mut AppCore, view_projection: Matrix4<f32>) {
         let mut buffer = UniformBuffer::new(Vec::new());
 
         let ao = &app.config.render.ambient_occlusion;

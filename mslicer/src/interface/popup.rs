@@ -10,8 +10,8 @@ use remote_print::manager::RemotePrintManager;
 use crate::{
     app_ref_type,
     core::{
-        App, config::Config, history::History, is_slicing, project::Project, slice::SliceOperation,
-        state::UiState,
+        App, AppCore, config::Config, history::History, is_slicing, project::Project,
+        slice::SliceOperation, state::UiState,
     },
     interface::{components::button_row, panels::Panels},
     render::camera::Camera,
@@ -71,21 +71,33 @@ impl<'a> PopupManagerRef<'a> {
         let mut i = 0;
         let mut close = false;
 
-        let this = &mut self.app.popup;
+        let AppCore {
+            popup: popup_manager,
+            panels,
+            tasks,
+            remote_print,
+            slice_operation,
+            camera,
+            state,
+            config,
+            project,
+            history,
+            ..
+        } = &mut self.app.core;
         let mut app = PopupApp {
-            panels: &mut self.app.panels,
-            tasks: &mut self.app.tasks,
-            remote_print: &mut self.app.remote_print,
-            slice_operation: &mut self.app.slice_operation,
-            camera: &mut self.app.camera,
-            state: &mut self.app.state,
-            config: &mut self.app.config,
-            project: &mut self.app.project,
-            history: &mut self.app.history,
+            panels,
+            tasks,
+            remote_print,
+            slice_operation,
+            camera,
+            state,
+            config,
+            project,
+            history,
         };
 
-        while i < this.popups.len() {
-            let popup = &mut this.popups[i];
+        while i < popup_manager.popups.len() {
+            let popup = &mut popup_manager.popups[i];
             let size = vec2(400.0, 0.0);
             Window::new("")
                 .id(popup.id)
@@ -119,7 +131,7 @@ impl<'a> PopupManagerRef<'a> {
                 });
 
             if mem::take(&mut close) {
-                this.popups.remove(i);
+                popup_manager.popups.remove(i);
             } else {
                 i += 1;
             }
@@ -213,16 +225,28 @@ impl PopupIcon {
 impl<'a> PopupApp<'a> {
     // kinda annoying this has to be duplicated...
     pub fn from_app(app: &'a mut App) -> Self {
+        let AppCore {
+            panels,
+            tasks,
+            remote_print,
+            slice_operation,
+            camera,
+            state,
+            config,
+            project,
+            history,
+            ..
+        } = &mut app.core;
         Self {
-            panels: &mut app.panels,
-            tasks: &mut app.tasks,
-            remote_print: &mut app.remote_print,
-            slice_operation: &mut app.slice_operation,
-            camera: &mut app.camera,
-            state: &mut app.state,
-            config: &mut app.config,
-            project: &mut app.project,
-            history: &mut app.history,
+            panels,
+            tasks,
+            remote_print,
+            slice_operation,
+            camera,
+            state,
+            config,
+            project,
+            history,
         }
     }
 

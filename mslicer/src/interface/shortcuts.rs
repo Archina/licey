@@ -1,10 +1,10 @@
 use std::ops::Deref;
 
 use common::units::Milimeter;
-use egui::{Context, Key, KeyboardShortcut, Modifiers, ViewportCommand};
+use egui::{Context, Key, KeyboardShortcut, Modifiers};
 
 use crate::{
-    core::{App, project::Project},
+    core::{App, AppCore, project::Project},
     include_asset,
     interface::popup::confirm_unsaved,
     task::{AutoLayout, FileDialog, LoadSliced, MeshLoad, MultiFileDialog},
@@ -155,8 +155,8 @@ fn load(app: &mut App, _ctx: &Context) {
     confirm_unsaved(app, |app| app.tasks.add(Project::load()));
 }
 
-fn quit(_app: &mut App, ctx: &Context) {
-    ctx.send_viewport_cmd(ViewportCommand::Close)
+fn quit(app: &mut App, _ctx: &Context) {
+    app.quit = true;
 }
 
 fn slice(app: &mut App, _ctx: &Context) {
@@ -176,21 +176,30 @@ fn select_none(app: &mut App, _ctx: &Context) {
 }
 
 fn quick_layout(app: &mut App, _ctx: &Context) {
-    if app.project.models.is_empty() {
+    let AppCore {
+        project,
+        config,
+        tasks,
+        ..
+    } = &mut app.core;
+
+    if project.models.is_empty() {
         return;
     }
 
-    let padding = app.config.ui.quick_layout_spacing.get::<Milimeter>();
-    app.tasks.add(AutoLayout::new(
-        &app.project.slice_config,
-        &app.project.models,
+    let padding = config.ui.quick_layout_spacing.get::<Milimeter>();
+    tasks.add(AutoLayout::new(
+        &project.slice_config,
+        &project.models,
         (padding, 10.0),
     ));
 }
 
 fn select_all(app: &mut App, _ctx: &Context) {
-    app.state.selected.clear();
-    for model in app.project.models.iter() {
-        app.state.selected.select_model(model.id);
+    let AppCore { project, state, .. } = &mut app.core;
+
+    state.selected.clear();
+    for model in project.models.iter() {
+        state.selected.select_model(model.id);
     }
 }

@@ -1,112 +1,105 @@
-use egui::PaintCallbackInfo;
-use egui_wgpu::{CallbackResources, CallbackTrait, ScreenDescriptor};
+use bevy::{
+    prelude::*,
+    render::{render_phase::TrackedRenderPass, sync_world::RenderEntity},
+};
+use bevy_egui::{egui::PaintCallbackInfo, render::EguiBevyPaintCallbackImpl, render::EguiPipelineKey};
 use nalgebra::Vector2;
-use wgpu::{CommandBuffer, CommandEncoder, Device, Queue, RenderPass};
+use wgpu::CommandEncoder;
 
 use crate::{
-    core::App,
-    render::workspace::{
-        line::LineDispatch,
-        model::{ModelPipeline, Target},
-        point::PointDispatch,
-        support::SupportPipeline,
-    },
+    core::{App, AppCore},
+    render::{Canvas, ViewportPixels, blit, ensure_blit_pipeline, workspace::model::ModelPipeline},
 };
 
-pub mod line;
 pub mod model;
-pub mod point;
-pub mod support;
 
 pub struct WorkspaceRenderResources {
+    /// The offscreen model preview the sliced panel downloads while slicing.
+    ///
+    /// The viewport itself is drawn by `crate::render::scene` — a bevy `Camera3d` rendering into
+    /// an `Image` — so this pipe is all that is left of the old workspace rendering.
     pub model: ModelPipeline,
-    pub support: SupportPipeline,
-
-    pub point: PointDispatch,
-    pub solid_line: LineDispatch,
 }
 
-// todo: do i even have to say it...
-pub struct WorkspaceRenderCallback {
-    pub app: *mut App,
-}
-
+/// Renders and presents the offscreen model preview the sliced panel shows in its sidebar.
 pub struct PreviewRenderCallback {
     pub app: *mut App,
+    /// Size of the preview texture the model is rendered into.
     pub viewport: Vector2<u32>,
 }
 
-impl CallbackTrait for WorkspaceRenderCallback {
-    fn prepare(
-        &self,
-        _device: &Device,
-        _queue: &Queue,
-        screen: &ScreenDescriptor,
-        encoder: &mut CommandEncoder,
-        resources: &mut CallbackResources,
-    ) -> Vec<CommandBuffer> {
-        let workspace = resources.get_mut::<WorkspaceRenderResources>().unwrap();
-        let app = unsafe { &mut *self.app };
-        let gcx = app.gcx();
-
-        workspace.model.prepare(&gcx, screen, encoder, app);
-        workspace.support.prepare(&gcx, app);
-        workspace.solid_line.prepare(&gcx, app);
-        workspace.point.prepare(&gcx, app);
-
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: PaintCallbackInfo,
-        render_pass: &mut RenderPass,
-        resources: &CallbackResources,
-    ) {
-        let workspace = resources.get::<WorkspaceRenderResources>().unwrap();
-        let app = unsafe { &mut *self.app };
-
-        workspace.solid_line.paint(render_pass);
-        workspace.model.paint(render_pass, app, Target::Viewport);
-        workspace.point.paint(render_pass);
-        workspace.support.paint(render_pass, app);
-    }
-}
-
-// do u really have to put the word 'Trait' in ur trait name...
-impl CallbackTrait for PreviewRenderCallback {
-    fn prepare(
-        &self,
-        _device: &Device,
-        _queue: &Queue,
-        _screen: &ScreenDescriptor,
-        encoder: &mut CommandEncoder,
-        resources: &mut CallbackResources,
-    ) -> Vec<wgpu::CommandBuffer> {
-        let workspace = resources.get_mut::<WorkspaceRenderResources>().unwrap();
-        let app = unsafe { &mut *self.app };
-        let (gcx, view) = (app.gcx(), self.viewport);
-
-        workspace.model.prepare_preview(&gcx, encoder, app, view);
-
-        Vec::new()
-    }
-
-    fn paint(
-        &self,
-        _info: PaintCallbackInfo,
-        render_pass: &mut RenderPass,
-        resources: &CallbackResources,
-    ) {
-        let workspace = resources.get::<WorkspaceRenderResources>().unwrap();
-        let app = unsafe { &mut *self.app };
-
-        workspace.model.paint(render_pass, app, Target::Preview);
-    }
-}
-
-unsafe impl Send for WorkspaceRenderCallback {}
-unsafe impl Sync for WorkspaceRenderCallback {}
-
 unsafe impl Send for PreviewRenderCallback {}
 unsafe impl Sync for PreviewRenderCallback {}
+
+impl WorkspaceRenderResources {
+    /// Renders a preview image of the model (used in the sliced panel's tooltip preview).
+    pub fn prepare_preview(
+        &mut self,
+        app: &mut AppCore,
+        encoder: &mut CommandEncoder,
+        size: Vector2<u32>,
+    ) {
+        let gcx = app.gcx();
+        self.model.prepare_preview(&gcx, encoder, app, size);
+    }
+
+    pub fn paint_preview(
+        &self,
+        encoder: &mut CommandEncoder,
+        app: &mut AppCore,
+        canvas: &mut Canvas,
+        viewport: ViewportPixels,
+    ) -> bool {
+        let Some(mut pass) = canvas.begin_pass(encoder) else {
+            return false;
+        };
+        viewport.apply(&mut pass);
+
+        self.model.paint(&mut pass, app);
+
+        true
+    }
+}
+
+impl EguiBevyPaintCallbackImpl for PreviewRenderCallback {
+    fn update(
+        &self,
+        info: PaintCallbackInfo,
+        _render_entity: RenderEntity,
+        key: EguiPipelineKey,
+        world: &mut World,
+    ) {
+        ensure_blit_pipeline(world, key.target_format);
+
+        let app = unsafe { &mut *self.app };
+        let App { core, render } = app;
+
+        let mut encoder = core.gpu.device.create_command_encoder(&Default::default());
+        render
+            .workspace
+            .prepare_preview(core, &mut encoder, self.viewport);
+
+        let viewport = ViewportPixels::from_info(&info, render.canvas.size());
+        render
+            .workspace
+            .paint_preview(&mut encoder, core, &mut render.canvas, viewport);
+
+        core.gpu.queue.submit(Some(encoder.finish()));
+    }
+
+    fn render<'pass>(
+        &self,
+        _info: PaintCallbackInfo,
+        render_pass: &mut TrackedRenderPass<'pass>,
+        _render_entity: RenderEntity,
+        key: EguiPipelineKey,
+        world: &'pass World,
+    ) {
+        let app = unsafe { &*self.app };
+        let Some(source) = app.render.canvas.resolve_view() else {
+            return;
+        };
+
+        blit(render_pass, &source, &app.render.blit_sampler, key, world);
+    }
+}

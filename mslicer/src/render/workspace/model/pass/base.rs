@@ -1,9 +1,5 @@
-use std::{f32::consts::PI, num::NonZero};
+use std::num::NonZero;
 
-use common::{
-    color::{LinearRgb, OkLab, SRgb},
-    units::Milimeter,
-};
 use encase::{DynamicUniformBuffer, ShaderSize, ShaderType};
 use nalgebra::{Matrix4, Vector3};
 use wgpu::{
@@ -18,7 +14,7 @@ use wgpu::{
 };
 
 use crate::{
-    core::{App, config::render::RenderStyle, project::model::ModelId, state::Tool},
+    core::{AppCore, config::render::RenderStyle},
     include_shader,
     render::{
         Gcx, VERTEX_BUFFER_LAYOUT,
@@ -107,11 +103,6 @@ impl BasePass {
                         write_mask: ColorWrites::all(),
                     }),
                     // model
-                    Some(ColorTargetState {
-                        format: TextureFormat::Rg32Uint,
-                        blend: None,
-                        write_mask: ColorWrites::all(),
-                    }),
                     // normals
                     Some(ColorTargetState {
                         format: TextureFormat::Rgba16Float,
@@ -173,20 +164,6 @@ impl BasePass {
                     depth_slice: None,
                 }),
                 Some(RenderPassColorAttachment {
-                    view: &multi.model_target,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color {
-                            r: u32::MAX as f64,
-                            g: u32::MAX as f64,
-                            b: 0.0,
-                            a: 0.0,
-                        }),
-                        store: StoreOp::Store,
-                    },
-                    depth_slice: None,
-                }),
-                Some(RenderPassColorAttachment {
                     view: &multi.normal_target,
                     resolve_target: None,
                     ops: Operations {
@@ -219,42 +196,7 @@ impl BasePass {
         })
     }
 
-    pub fn paint(&self, encoder: &mut CommandEncoder, app: &mut App, multi: &MultiStage) {
-        let resources = &multi.base;
-        let Some(bind_group) = &resources.bind_group else {
-            return;
-        };
-
-        let mut render_pass = self.render_pass(encoder, multi);
-        render_pass.set_pipeline(&self.pipeline);
-
-        let indexes = (app.project.models.iter().enumerate())
-            .filter(|(_, x)| !x.hidden)
-            .map(|(idx, _)| idx);
-
-        let mut i = 0;
-        for idx in indexes {
-            render_pass.set_bind_group(0, bind_group, &[resources.uniform_offsets[i]]);
-            i += 1;
-
-            let model = &app.project.models[idx];
-            let buffers = model.try_get_buffers().unwrap();
-            render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(buffers.index_buffer.slice(..), IndexFormat::Uint32);
-            render_pass.draw_indexed(0..(model.mesh.face_count() as u32 * 3), 0, 0..1);
-
-            if let Some((buffers, count)) = model.supports.try_get_buffers() {
-                render_pass.set_bind_group(0, bind_group, &[resources.uniform_offsets[i]]);
-                i += 1;
-
-                render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(buffers.index_buffer.slice(..), IndexFormat::Uint32);
-                render_pass.draw_indexed(0..count, 0, 0..1);
-            }
-        }
-    }
-
-    pub fn paint_preview(&self, encoder: &mut CommandEncoder, app: &mut App, multi: &MultiStage) {
+    pub fn paint_preview(&self, encoder: &mut CommandEncoder, app: &mut AppCore, multi: &MultiStage) {
         let (Some(bind_group), Some(Some(interactive))) = (
             &multi.base.bind_group,
             (app.slice_operation.as_ref()).map(|x| x.interactive_previews.as_ref()),
@@ -316,111 +258,10 @@ impl BaseResources {
         self.bind_group.replace(bind_group);
     }
 
-    fn write_uniforms(
-        &mut self,
-        gcx: &Gcx,
-        app: &mut App,
-        layout: &BindGroupLayout,
-        mut callback: impl FnMut(&mut App, &Gcx, ModelId) -> Vec<(Uniforms, Vec<u32>)>,
-    ) {
-        self.uniform_offsets.clear();
-
-        let mut uniform_buffer = DynamicUniformBuffer::new(Vec::new());
-        let mut selected_words = Vec::new();
-
-        let ids = (app.project.models.iter_mut())
-            .filter(|x| !x.hidden)
-            .map(|x| x.id)
-            .collect::<Vec<_>>();
-
-        for model_id in ids {
-            let model = app.project.model(model_id).unwrap();
-            model.get_buffers(&gcx.device);
-            model.supports.get_buffers(&gcx.device);
-
-            for (mut uniform, selected) in callback(app, gcx, model_id) {
-                uniform.selected_offset = selected_words.len() as u32;
-                selected_words.extend_from_slice(&selected);
-
-                let offset = uniform_buffer.write(&uniform);
-                self.uniform_offsets.push(offset.unwrap() as u32);
-            }
-        }
-
-        selected_words.resize(selected_words.len().max(1), 0);
-        let uniform = self.uniform.write(gcx, &uniform_buffer.into_inner());
-        let selected = self.selected.write_slice(gcx, &selected_words);
-
-        if !self.uniform_offsets.is_empty() && (uniform || selected) {
-            self.recreate_bind_group(gcx, layout);
-        }
-    }
-
-    pub fn prepare(&mut self, gcx: &Gcx, app: &mut App, pass: &BasePass) {
-        let view_projection = app.view_projection();
-        let render_style = app.config.render.style as u32;
-        let build_volume = (app.project.slice_config)
-            .platform_size
-            .map(|x| x.get::<Milimeter>());
-
-        let (show_overhang, overhang_angle) = app.config.render.overhangs;
-        let overhang_angle = show_overhang.then_some(overhang_angle);
-        let overhang_angle = overhang_angle
-            .map(|x| x.to_radians())
-            .unwrap_or(f32::from_bits(u32::MAX));
-
-        self.write_uniforms(gcx, app, &pass.group_layout, |app, gcx, model_id| {
-            let model = app.project.model(model_id).unwrap();
-            model.get_buffers(&gcx.device);
-
-            let model_transform = *model.mesh.transformation_matrix();
-            let base = Uniforms {
-                transform: view_projection * model_transform,
-                model_transform,
-                build_volume,
-                model_color: model.color.to_srgb().into(),
-                render_style,
-                overhang_angle,
-                id: model.id.raw(),
-                selected_offset: 0,
-            };
-
-            let mut selected = Selected::for_model(model);
-            if app.state.tool == Tool::Orient
-                && let Some(hover) = app.state.hovered_geometry
-                && hover.model == model.id
-            {
-                selected.set_selected(hover.face as usize);
-            }
-
-            let mut out = vec![(base.clone(), selected.into_inner())];
-
-            if model.supports.get_buffers(&gcx.device).is_some() {
-                let (mesh, support_faces) = model.supports.mesh().as_ref().unwrap();
-                let model_transform = mesh.transformation_matrix();
-                let uniform = Uniforms {
-                    transform: view_projection * model_transform,
-                    model_color: invert_color(model.color).into(),
-                    id: base.id | 1 << 31,
-                    ..base
-                };
-
-                let mut selected = Selected::new(mesh.face_count());
-                for support in app.state.selected_supports.for_model(model.id) {
-                    selected.set_selected_range(support_faces[&support]);
-                }
-
-                out.push((uniform, selected.into_inner()));
-            }
-
-            out
-        });
-    }
-
     pub fn prepare_preview(
         &mut self,
         gcx: &Gcx,
-        app: &mut App,
+        app: &mut AppCore,
         pass: &BasePass,
         view: Matrix4<f32>,
     ) {
@@ -462,11 +303,4 @@ impl BaseResources {
             self.recreate_bind_group(gcx, &pass.group_layout);
         }
     }
-}
-
-fn invert_color(linear: LinearRgb<f32>) -> SRgb<f32> {
-    OkLab::from_linear_srgb(linear)
-        .hue_shift(PI)
-        .to_linear_srgb()
-        .to_srgb()
 }

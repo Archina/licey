@@ -12,7 +12,7 @@ use wgpu::{
 };
 
 use crate::{
-    core::App,
+    core::AppCore,
     include_shader,
     render::{
         Gcx,
@@ -139,7 +139,7 @@ impl LightingPass {
         }
     }
 
-    pub fn prepare(&mut self, gcx: &Gcx, app: &mut App, camera: Option<&Camera>) {
+    pub fn prepare(&mut self, gcx: &Gcx, app: &mut AppCore, camera: Option<&Camera>) {
         let mut buffer = UniformBuffer::new(Vec::new());
 
         let ao = app.config.render.ambient_occlusion.enabled;

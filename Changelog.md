@@ -2,6 +2,16 @@
 
 ## v0.10.0 &mdash; Coming Soon™
 
+- Rewrote the viewport on bevy. bevy now owns the window and the existing egui interface runs
+  inside it, so no UI code changed.
+  - Models, supports, the build plate, the bed grid and the camera-target marker are bevy entities
+    in a real 3D scene, rendered to an image the Viewport tab displays
+  - Hover and face picking now use bevy's mesh ray casting, replacing the GPU id/face readback pass
+  - The transform gizmo is bevy's built-in one; `transform-gizmo`/`transform-gizmo-egui` are no
+    longer dependencies
+  - The model shader is a bevy material now, keeping overhang shading, the render styles, per-face
+    selection, the out-of-bounds tint and the back-face colour
+  - The sliced-panel preview and the basis widget keep their existing wgpu pipelines
 - Merge lift and retract distance settings.
   In practice they should always be the same and the setting was only supported by `.goo`
 - Fix auto-layout's previously incorrect handling of scaled and rotated models

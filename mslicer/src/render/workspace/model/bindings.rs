@@ -4,15 +4,12 @@ use wgpu::{
 };
 
 use crate::{
-    core::App,
-    render::{
-        Gcx,
-        workspace::model::{ModelPipeline, MultiStage, Target, pass::base::BaseResources},
-    },
+    core::AppCore,
+    render::{Gcx, workspace::model::{ModelPipeline, MultiStage, pass::base::BaseResources}},
 };
 
 impl ModelPipeline {
-    pub fn size_textures(&mut self, gcx: &Gcx, app: &App, target: Target, size: Vector2<u32>) {
+    pub fn size_textures(&mut self, gcx: &Gcx, app: &AppCore, size: Vector2<u32>) {
         let extent = Extent3d {
             width: size.x,
             height: size.y,
@@ -26,7 +23,7 @@ impl ModelPipeline {
             depth_or_array_layers: 1,
         };
 
-        if let Some(multi_stage) = &self.get_target(target)
+        if let Some(multi_stage) = &self.preview
             && multi_stage.target_a.texture().size() == extent
             && multi_stage.occlusion_target_a.texture().size() == occlusion_extent
         {
@@ -58,17 +55,6 @@ impl ModelPipeline {
             dimension: TextureDimension::D2,
             format: TextureFormat::Depth32Float,
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        let model_target = gcx.device.create_texture(&TextureDescriptor {
-            label: Some("Model"),
-            size: extent,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rg32Uint,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
 
@@ -112,7 +98,6 @@ impl ModelPipeline {
         let occlusion_target_a_view = occlusion_target_a.create_view(&Default::default());
         let occlusion_target_b_view = occlusion_target_b.create_view(&Default::default());
         let depth_target_view = depth_target.create_view(&Default::default());
-        let model_target_view = model_target.create_view(&Default::default());
         let normal_target_view = normal_target.create_view(&Default::default());
         let world_target_view = world_target.create_view(&Default::default());
 
@@ -126,12 +111,11 @@ impl ModelPipeline {
             occlusion_target_b: occlusion_target_b_view,
 
             depth_target: depth_target_view,
-            model_target: model_target_view,
             normal_target: normal_target_view,
             world_target: world_target_view,
         };
 
-        *self.get_target_mut(target) = Some(MultiStage {
+        self.preview = Some(MultiStage {
             base: BaseResources::new(&gcx.device),
             ssao: self.ssao.recreate_bind_group(gcx, &textures, sampler),
             blur: self.blur.recreate_bind_group(gcx, &textures, sampler),
@@ -144,14 +128,13 @@ impl ModelPipeline {
             occlusion_target_a: textures.occlusion_target_a,
             occlusion_target_b: textures.occlusion_target_b,
             depth_target: textures.depth_target,
-            model_target: textures.model_target,
             normal_target: textures.normal_target,
             world_target: textures.world_target,
         });
     }
 }
 
-pub fn occlusion_size(app: &App, size: Vector2<u32>) -> Vector2<u32> {
+pub fn occlusion_size(app: &AppCore, size: Vector2<u32>) -> Vector2<u32> {
     let scale = app.config.render.ambient_occlusion.scale.clamp(0.1, 1.0);
     (size.cast::<f32>() * scale).map(|x| x.ceil() as u32)
 }
@@ -164,7 +147,6 @@ pub struct TextureViews {
     pub occlusion_target_b: TextureView,
 
     pub depth_target: TextureView,
-    pub model_target: TextureView,
     pub normal_target: TextureView,
     pub world_target: TextureView,
 }

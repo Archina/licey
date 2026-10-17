@@ -11,7 +11,7 @@ use wgpu::{
 };
 
 use crate::{
-    core::App,
+    core::AppCore,
     include_shader,
     render::{
         Gcx,
@@ -140,7 +140,7 @@ impl BlurPass {
         }
     }
 
-    pub fn prepare(&mut self, gcx: &Gcx, app: &mut App, resolution: Vector2<u32>) {
+    pub fn prepare(&mut self, gcx: &Gcx, app: &mut AppCore, resolution: Vector2<u32>) {
         let mut buffer = UniformBuffer::new(Vec::new());
 
         let ao = &app.config.render.ambient_occlusion;

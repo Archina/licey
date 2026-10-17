@@ -22,14 +22,14 @@ use egui_phosphor::regular::{
     VECTOR_THREE, VECTOR_TWO,
 };
 use egui_plot::{Line, LineStyle, Plot, VLine};
-use egui_wgpu::Callback;
+use bevy_egui::render::EguiBevyPaintCallback;
 use epaint_default_fonts::UBUNTU_LIGHT;
 use image::{ImageFormat, Rgba, RgbaImage, imageops::FilterType};
 use nalgebra::Vector2;
 
 use crate::{
     core::{
-        App,
+        App, AppCore,
         config::{
             Config,
             sliced::{Currency, SlicePreviewCoordinateSpace, SlicePreviewView, SlicedConfig},
@@ -72,24 +72,37 @@ const SLICING_DEFECTS: &str = "There were (potential) slicing defects detected o
 const DEFECT_EXPL: &str = "Defective meshes can cause incorrect slicing. See how many defects were detected in each layer.";
 
 pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
+    // The paint callbacks run outside this borrow, so hand them a pointer to the app instead.
+    let app_ptr: *mut App = app;
+
     // idk man
     let preview = PreviewRenderCallback {
-        app: app as *mut _,
+        app: app_ptr,
         viewport: Default::default(),
     };
 
     let mut discard = false;
-    if let Some(slice_operation) = &app.slice_operation {
+    let AppCore {
+        project,
+        state,
+        config,
+        tasks,
+        popup,
+        remote_print,
+        slice_operation,
+        ..
+    } = &mut app.core;
+    if let Some(slice_operation) = slice_operation.as_ref() {
         let progress = &slice_operation.progress;
 
         if let Some(result) = slice_operation.result().as_mut() {
-            let format = app.project.slice_config.mode;
+            let format = project.slice_config.mode;
 
             if mem::take(&mut result.fresh) {
-                app.state.preview_layer = 1;
-                app.state.last_preview_layer = 0;
-                app.state.preview_offset = Vector2::zeros();
-                app.state.preview_scale = 1.0;
+                state.preview_layer = 1;
+                state.last_preview_layer = 0;
+                state.preview_offset = Vector2::zeros();
+                state.preview_scale = 1.0;
 
                 if let GenericSliceData::Raster { data, .. } = result.slice_data()
                     && let Some((layers, _defects)) = error_stats(&data)
@@ -97,13 +110,13 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                     let body = SLICING_DEFECTS
                         .replace("{layers}", &layers.to_string())
                         .replace("{s}", if layers == 1 { "" } else { "s" });
-                    app.popup
+                    popup
                         .open(Popup::simple("Slicing Defects", PopupIcon::Warning, body));
                 }
 
                 let layers = result.inner.layers();
-                app.state.layer_count = (layers, layers.to_string().len() as u8);
-                app.state.preview_mode = PreviewMode::Static;
+                state.layer_count = (layers, layers.to_string().len() as u8);
+                state.preview_mode = PreviewMode::Static;
             }
 
             ui.horizontal(|ui| {
@@ -130,16 +143,16 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
 
                 ui.with_layout(Layout::default().with_cross_align(Align::Max), |ui| {
                     ui.horizontal(|ui| {
-                        sidebar_button(&mut app.config.sliced, ui);
+                        sidebar_button(&mut config.sliced, ui);
                         ui.separator();
 
                         let enabled =
-                            app.remote_print.is_initialized() && format == SliceMode::Raster;
+                            remote_print.is_initialized() && format == SliceMode::Raster;
                         ui.add_enabled_ui(enabled, |ui| {
                             ui.menu_button(concatcp!(PAPER_PLANE_TILT, " Send to Printer"), |ui| {
                                 ui.set_width(150.0);
 
-                                let clients = app.remote_print.clients();
+                                let clients = remote_print.clients();
                                 (clients.is_empty()).then(|| ui.label("No printers connected."));
 
                                 for client in clients.iter() {
@@ -169,7 +182,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                                         file.serialize(&mut serializer, &Progress::new());
                                         let data = Arc::new(serializer.into_inner());
 
-                                        app.popup.open(name_popup(client.mainboard.clone(), data));
+                                        popup.open(name_popup(client.mainboard.clone(), data));
                                     }
                                 }
                             });
@@ -194,7 +207,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                                 }
 
                                 if response.clicked() {
-                                    app.tasks.add(save_file(
+                                    tasks.add(save_file(
                                         result.config.clone(),
                                         slice_operation.preview(),
                                         format,
@@ -220,7 +233,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                                 && let GenericSliceResult::Raster(raster) = &mut result.inner
                             {
                                 raster.detected_islands = true;
-                                app.tasks.add(IslandDetection::new(
+                                tasks.add(IslandDetection::new(
                                     result.config.platform_resolution,
                                     raster.layers.clone(),
                                     raster.annotations.clone(),
@@ -237,7 +250,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                                         [("Corse", 20), ("Fine", 10), ("Exact", 1)]
                                     {
                                         if ui.button(format!("{name} ({subsample})")).clicked() {
-                                            app.tasks.add(ReconstructMesh::new(
+                                            tasks.add(ReconstructMesh::new(
                                                 result.config.clone(),
                                                 raster.layers.clone(),
                                                 subsample,
@@ -251,7 +264,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                 });
             });
 
-            let mut sidebar_open = app.config.sliced.sidebar;
+            let mut sidebar_open = config.sliced.sidebar;
             Panel::right("sidebar")
                 .resizable(false)
                 .show_collapsible(ui, &mut sidebar_open, |ui| {
@@ -259,21 +272,21 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                         sidebar(
                             slice_operation,
                             result,
-                            &mut app.state,
-                            &mut app.config,
-                            &mut app.tasks,
-                            &mut app.popup,
+                            state,
+                            config,
+                            tasks,
+                            popup,
                             preview,
                             ui,
                         );
                     })
                 });
-            app.config.sliced.sidebar = sidebar_open;
+            config.sliced.sidebar = sidebar_open;
 
             match &mut result.inner {
                 GenericSliceResult::Raster(raster) => {
                     ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                        let state = &mut app.state;
+                        let state = &mut *state;
                         ui.horizontal(|ui| {
                             let layer_digits = state.layer_count.1 as usize;
                             DragValue::new(&mut state.preview_layer)
@@ -296,7 +309,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                                 ui.add_space(2.0);
                                 ui.label(format!("{CLOCK} {duration}"));
 
-                                if !app.config.sliced.sidebar {
+                                if !config.sliced.sidebar {
                                     ui.separator();
                                     let volume = raster.volume.get::<Centimeter>();
                                     ui.label(format!("{DROP} {volume:.2} ml"));
@@ -310,7 +323,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                         // allows you to select between seeing each pixel as a
                         // square or as the actual shape on the printer.
                         let platform = result.config.platform_resolution;
-                        let pixel_aspect = match app.config.sliced.coordinate_space {
+                        let pixel_aspect = match config.sliced.coordinate_space {
                             SlicePreviewCoordinateSpace::ScreenSpace => 1.0,
                             SlicePreviewCoordinateSpace::WorldSpace => {
                                 let platform_size = (result.config.platform_size.xy())
@@ -321,12 +334,13 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
                         };
 
                         slice_preview(
+                            app_ptr,
                             state,
                             ui,
                             raster,
                             platform,
                             pixel_aspect,
-                            &app.config.sliced,
+                            &config.sliced,
                         );
                     });
                 }
@@ -370,6 +384,7 @@ pub fn ui(app: &mut App, ui: &mut Ui, _ctx: &Context) {
 }
 
 fn slice_preview(
+    app: *mut App,
     state: &mut UiState,
     ui: &mut egui::Ui,
     result: &mut RasterSliceResult,
@@ -440,9 +455,10 @@ fn slice_preview(
                     None
                 };
 
-                let callback = Callback::new_paint_callback(
+                let callback = EguiBevyPaintCallback::new_paint_callback(
                     rect,
                     SlicePreviewRenderCallback {
+                        app,
                         dimensions: platform,
                         offset: state.preview_offset,
                         rotation,
@@ -735,7 +751,10 @@ fn sidebar(
 
                 preview_callback.viewport = Vector2::new(size.x, size.y);
                 let rect = response.on_hover_cursor(cursor).rect;
-                painter.add(Callback::new_paint_callback(rect, preview_callback));
+                painter.add(EguiBevyPaintCallback::new_paint_callback(
+                    rect,
+                    preview_callback,
+                ));
             } else {
                 let (width, height) = (preview.image.width(), preview.image.height());
 

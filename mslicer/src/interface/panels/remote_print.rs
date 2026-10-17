@@ -20,7 +20,7 @@ use rfd::FileDialog;
 use tracing::{info, warn};
 
 use crate::{
-    core::{App, config::peripherals::ContentType, state::RemotePrintConnectStatus},
+    core::{App, AppCore, config::peripherals::ContentType, state::RemotePrintConnectStatus},
     interface::{
         components::grid,
         popup::{Popup, PopupIcon},
@@ -260,43 +260,50 @@ pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
             });
         }
 
+        let AppCore {
+            remote_print,
+            state,
+            config,
+            tasks,
+            popup,
+            ..
+        } = &mut app.core;
+
         ui.add_enabled_ui(
-            app.state.remote_print_connecting == RemotePrintConnectStatus::None,
+            state.remote_print_connecting == RemotePrintConnectStatus::None,
             |ui| {
                 ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                     let scan = ui.button(concatcp!(NETWORK, " Scan"));
                     let height = scan.rect.height();
                     if scan.clicked() {
-                        app.state.remote_print_connecting = RemotePrintConnectStatus::Scanning;
-                        app.tasks.add(PrinterScan::new(
-                            &app.remote_print,
-                            app.config.remote_print.broadcast_address,
+                        state.remote_print_connecting = RemotePrintConnectStatus::Scanning;
+                        tasks.add(PrinterScan::new(
+                            remote_print,
+                            config.remote_print.broadcast_address,
                         ));
                     }
 
                     ui.add_sized(vec2(2.0, height), Separator::default());
                     if ui.button(concatcp!(PLUGS, " Connect")).clicked() {
-                        if let Ok(address) = Ipv4Addr::from_str(&app.state.working_address) {
-                            app.state.remote_print_connecting =
-                                RemotePrintConnectStatus::Connecting;
-                            app.tasks
-                                .add(PrinterConnect::new(&app.remote_print, address));
+                        if let Ok(address) = Ipv4Addr::from_str(&state.working_address) {
+                            state.remote_print_connecting = RemotePrintConnectStatus::Connecting;
+                            tasks.add(PrinterConnect::new(remote_print, address));
                         } else {
-                            app.popup.open(Popup::simple(
+                            popup.open(Popup::simple(
                                 "Remote Print Error",
                                 PopupIcon::Error,
                                 format!(
                                     "The entered address `{}` is invalid.",
-                                    app.state.working_address,
+                                    state.working_address,
                                 ),
                             ));
-                            app.state.working_address.clear();
+                            state.working_address.clear();
                         }
                     }
 
                     ui.add_sized(
                         vec2(ui.available_width(), height),
-                        TextEdit::singleline(&mut app.state.working_address)
+                        TextEdit::singleline(&mut state.working_address)
                             .hint_text("192.168.1.233")
                             .desired_width(ui.available_width()),
                     );
@@ -407,7 +414,12 @@ pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
     });
 
     ui.collapsing("Config", |ui| {
-        let config = &mut app.config.remote_print;
+        let AppCore {
+            remote_print,
+            config,
+            ..
+        } = &mut app.core;
+        let config = &mut config.remote_print;
 
         ui.checkbox(&mut config.alert_completion, "Send toast on print complete");
 
@@ -416,8 +428,8 @@ pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
         let last_status_proxy = config.status_proxy;
         ui.checkbox(&mut config.status_proxy, "Enable HTTP status proxy");
 
-        if app.remote_print.is_initialized() && last_status_proxy != config.status_proxy {
-            app.remote_print.http.set_proxy_enabled(config.status_proxy);
+        if remote_print.is_initialized() && last_status_proxy != config.status_proxy {
+            remote_print.http.set_proxy_enabled(config.status_proxy);
         }
 
         let last_timeout = config.timeout;
@@ -432,9 +444,9 @@ pub fn ui(app: &mut App, ui: &mut Ui, ctx: &Context) {
             ui.label("Network timeout");
         });
 
-        if app.remote_print.is_initialized() && last_timeout != config.timeout {
+        if remote_print.is_initialized() && last_timeout != config.timeout {
             let duration = Duration::from_secs_f32(config.timeout);
-            app.remote_print.set_timeout(duration).unwrap();
+            remote_print.set_timeout(duration).unwrap();
         }
     });
 }

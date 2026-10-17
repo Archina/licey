@@ -18,7 +18,7 @@ use nalgebra::Vector3;
 
 use crate::{
     core::{
-        App,
+        App, AppCore,
         config::ui::B_PER_MIB,
         history::ModelAction,
         project::{
@@ -48,13 +48,19 @@ pub fn model_entry(
     idx: usize,
     dragged: bool,
 ) -> Response {
-    let model = &mut app.project.models[model];
+    let AppCore {
+        project,
+        state,
+        history,
+        ..
+    } = &mut app.core;
+    let model = &mut project.models[model];
     let id = model.id;
 
     let (rect, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::click_and_drag());
 
-    let selected = app.state.selected.contains_model(id);
+    let selected = state.selected.contains_model(id);
     let color = if selected && !dragged {
         ui.visuals().selection.bg_fill
     } else if response.hovered() || dragged {
@@ -69,7 +75,7 @@ pub fn model_entry(
     ui.painter().rect_filled(rect_margin, 2.0, color);
 
     if response.clicked() {
-        app.state
+        state
             .selected
             .model_clicked(id, ui.input(|x| x.modifiers.shift));
     }
@@ -87,7 +93,7 @@ pub fn model_entry(
                 .on_hover_text(if model.hidden { "Show" } else { "Hide" })
                 .clicked()
             {
-                app.history
+                history
                     .track_model(model.id, ModelAction::Hidden(model.hidden));
                 model.hidden ^= true;
             }
@@ -121,7 +127,7 @@ pub fn model_entry(
                 (!editing).then(|| model.ui.rename = RenameState::None);
 
                 history_tracked_model(
-                    (editing, ui, &mut app.history),
+                    (editing, ui, history),
                     (id, || ModelAction::Name(model.name.clone())),
                 )
             }
@@ -140,9 +146,16 @@ pub fn model_properties(
     action: &mut UiAction,
     i: usize,
 ) {
-    let model = &mut app.project.models[i];
+    let AppCore {
+        project,
+        history,
+        state,
+        tasks,
+        ..
+    } = &mut app.core;
+    let model = &mut project.models[i];
 
-    let platform = &app.project.slice_config.platform_size;
+    let platform = &project.slice_config.platform_size;
     let id = model.id;
 
     ui.horizontal_wrapped(|ui| {
@@ -155,7 +168,7 @@ pub fn model_properties(
 
         if shortcut(ui.button(concatcp!(TRASH, " Delete")), DELETE_SHORTCUT) {
             *action = UiAction::Remove(i);
-            app.state.selected.clear();
+            state.selected.clear();
         }
 
         if shortcut(ui.button(concatcp!(COPY, " Duplicate")), DUPLICATE_SHORTCUT) {
@@ -168,7 +181,7 @@ pub fn model_properties(
         ) {
             let collection = Collection::new_unnamed();
             model.collection = Some(collection.id);
-            app.project.collections.push(collection);
+            project.collections.push(collection);
         }
 
         if shortcut(
@@ -176,7 +189,7 @@ pub fn model_properties(
             ALIGN_SHORTCUT,
         ) {
             let old_pos = model.mesh.position();
-            app.history.track_model(id, ModelAction::Position(old_pos));
+            history.track_model(id, ModelAction::Position(old_pos));
 
             model.align_to_bed();
             model.update_oob(platform);
@@ -184,7 +197,7 @@ pub fn model_properties(
 
         if ui.button(concatcp!(SWAP, " Replace")).clicked() {
             let (id, name) = (model.id, model.name.clone());
-            app.tasks.add(FileDialog::pick_file(
+            tasks.add(FileDialog::pick_file(
                 ("Mesh", &["stl", "obj"]),
                 move |_app, path, tasks| {
                     let task = ReloadModel::new(id, name, path.to_path_buf());
@@ -199,7 +212,7 @@ pub fn model_properties(
                 .clicked()
         {
             let task = ReloadModel::new(model.id, model.name.clone(), file.clone());
-            app.tasks.add(task);
+            tasks.add(task);
         }
 
         ui.menu_button(concatcp!(CUBE, " Mesh"), |ui| {
@@ -207,18 +220,18 @@ pub fn model_properties(
                 ui.button(concatcp!(SUBTRACT_SQUARE, " Split Bodies")),
                 SPLIT_SHORTCUT,
             ) {
-                app.tasks.add(SplitBodies::new(model));
+                tasks.add(SplitBodies::new(model));
             }
 
             if ui
                 .button(concatcp!(VECTOR_THREE, " Flip Winding Order"))
                 .clicked()
             {
-                app.tasks.add(FlipWinding::new(model));
+                tasks.add(FlipWinding::new(model));
             }
 
             if ui.button(concatcp!(BANDAIDS, " Repair")).clicked() {
-                app.tasks.add(MeshRepair::new(model));
+                tasks.add(MeshRepair::new(model));
             }
 
             ui.menu_button(concatcp!(FLOPPY_DISK_BACK, " Export"), |ui| {
@@ -228,7 +241,7 @@ pub fn model_properties(
                         .clicked()
                     {
                         let mesh = model.mesh.inner().clone();
-                        app.tasks.add(FileDialog::save_file(
+                        tasks.add(FileDialog::save_file(
                             ("Mesh", &[format.extension()]),
                             move |_app, path, tasks| {
                                 let path = path.with_extension(format.extension());
@@ -250,7 +263,7 @@ pub fn model_properties(
                     let mut position = model.mesh.position();
                     let editing = dragger::vec3(ui, position.as_mut(), |x| x);
                     history_tracked_model(
-                        (editing, ui, &mut app.history),
+                        (editing, ui, history),
                         (id, || ModelAction::Position(model.mesh.position())),
                     );
                     (model.mesh.position() != position)
@@ -275,7 +288,7 @@ pub fn model_properties(
                         })
                     };
                     history_tracked_model(
-                        (editing, ui, &mut app.history),
+                        (editing, ui, history),
                         (id, || ModelAction::Scale(model.mesh.scale())),
                     );
 
@@ -292,7 +305,7 @@ pub fn model_properties(
                 let mut rotation = rad_to_deg(model.mesh.rotation());
                 let editing = dragger::vec3(ui, rotation.as_mut(), |x| x.suffix("°"));
                 history_tracked_model(
-                    (editing, ui, &mut app.history),
+                    (editing, ui, history),
                     (id, || ModelAction::Rotation(model.mesh.rotation())),
                 );
                 (model.mesh.rotation() != rotation)
@@ -308,12 +321,12 @@ pub fn model_properties(
                         .changed()
                         .then(|| model.color = color);
                     history_tracked_model(
-                        (editing, ui, &mut app.history),
+                        (editing, ui, history),
                         (id, || ModelAction::Color(original_color)),
                     );
 
                     if ui.button(concatcp!(DICE_THREE, " Random")).clicked() {
-                        app.history.track_model(id, ModelAction::Color(model.color));
+                        history.track_model(id, ModelAction::Color(model.color));
                         model.randomize_color();
                     }
                 });
@@ -344,7 +357,7 @@ pub fn model_properties(
                 let factor = model.unit.conversion();
                 if factor != last_factor {
                     let scale = model.mesh.scale() * factor / last_factor;
-                    model.set_scale(&app.project.slice_config.platform_size, scale);
+                    model.set_scale(&project.slice_config.platform_size, scale);
                 }
             });
 
@@ -361,7 +374,7 @@ pub fn model_properties(
             );
 
             history_tracked_model(
-                (editing, ui, &mut app.history),
+                (editing, ui, history),
                 (id, || ModelAction::RelativeExposure(model.exposure)),
             );
             editing.then(|| model.exposure = (value * 2.55).round() as u8);

@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Instant};
 
+use bevy::prelude::{Handle, Image};
 use common::color::SRgb;
-use egui::Vec2;
+use egui::{Rect, TextureId, Vec2};
 use egui_phosphor::regular::{CURSOR_CLICK, LINE_SEGMENT, TRIANGLE};
 use egui_tracing::EventCollector;
 use nalgebra::{Matrix4, Vector2, Vector3};
 use slicer::mesh::Mesh;
-use transform_gizmo::Gizmo;
 use wgpu::Device;
 
 use crate::{
@@ -25,6 +25,7 @@ pub struct UiState {
     pub line_support_debug: Vec<[Vector3<f32>; 2]>,
     pub queue_reset_ui: bool,
     pub tool: Tool,
+    pub viewport: ViewportRender,
 
     // support stuff
     pub workspace: WorkspaceHover,
@@ -60,15 +61,70 @@ pub struct UiState {
     pub move_timeout: u32,
 
     // transform gizmo
-    pub gizmo: Gizmo,
     pub gizmo_mode: GizmoTransform,
     pub gizmo_local: bool,
     pub gizmo_snap: bool,
     /// Whether the gizmo owned the pointer input on the previous frame. Used to
     /// stop the camera from orbiting while a handle is hovered or being dragged.
     pub gizmo_hot: bool,
-    /// The model transform captured at the start of an in-progress drag.
-    pub gizmo_drag: Option<GizmoDrag>,
+}
+
+/// The bevy render target the workspace scene draws into, and the egui handle to it.
+///
+/// The viewport panel writes [`Self::target_size`] (in physical pixels) every frame; the scene's
+/// sync system keeps [`Self::image`] at that size and hands [`Self::texture_id`] back for
+/// `painter.image()`.
+///
+/// `rect` is where that image lands on the window, which is what the transform gizmo needs: its
+/// interaction camera uses the physical rect as its `Camera::viewport`, so that
+/// `Camera::viewport_to_world` resolves window cursor coordinates into the viewport's world rays,
+/// and the logical rect to tell whether the pointer is over the viewport at all.
+pub struct ViewportRender {
+    pub image: Option<Handle<Image>>,
+    pub texture_id: Option<TextureId>,
+    /// Physical size of the image currently allocated.
+    pub size: Vector2<u32>,
+    /// Physical size the viewport panel wants.
+    pub target_size: Vector2<u32>,
+    /// Where the viewport sits on the window, in physical pixels and in points.
+    pub rect: ViewportRect,
+    /// Whether the Viewport tab was drawn this frame. The gizmo stays hidden while it is not: a
+    /// hidden tab has no rect to hit-test against and nothing to draw the handles over.
+    pub painted: bool,
+}
+
+impl Default for ViewportRender {
+    fn default() -> Self {
+        Self {
+            image: None,
+            texture_id: None,
+            size: Vector2::zeros(),
+            target_size: Vector2::zeros(),
+            rect: ViewportRect::default(),
+            painted: false,
+        }
+    }
+}
+
+/// The viewport panel's rect on the window, as last painted.
+#[derive(Clone, Copy)]
+pub struct ViewportRect {
+    /// Physical (pixel) position on the window.
+    pub min: Vector2<u32>,
+    /// Physical size.
+    pub size: Vector2<u32>,
+    /// The same rect in egui points, i.e. in window logical coordinates.
+    pub logical: Rect,
+}
+
+impl Default for ViewportRect {
+    fn default() -> Self {
+        Self {
+            min: Vector2::zeros(),
+            size: Vector2::zeros(),
+            logical: Rect::ZERO,
+        }
+    }
 }
 
 /// Which handles the transform gizmo shows.
@@ -90,15 +146,6 @@ impl GizmoTransform {
             Self::Scale => "Scale",
         }
     }
-}
-
-/// The selected model's transform captured when a gizmo drag starts, used to
-/// build the undo entry once the drag ends.
-pub struct GizmoDrag {
-    pub model: ModelId,
-    pub position: Vector3<f32>,
-    pub rotation: Vector3<f32>,
-    pub scale: Vector3<f32>,
 }
 
 pub struct PreviewModel {

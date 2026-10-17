@@ -20,7 +20,7 @@ use slicer::{
 use crate::{
     app_ref_type,
     core::{
-        App,
+        App, AppCore,
         config::ui::B_PER_MIB,
         project::{
             Collection, CollectionId,
@@ -270,8 +270,9 @@ impl SliceConfigAction {
     }
 
     pub fn undo(self, app: &mut App) -> Option<SliceConfigAction> {
-        let slice_config = &mut app.project.slice_config;
-        let post_processing = &mut app.project.post_processing;
+        let AppCore { project, .. } = &mut app.core;
+        let slice_config = &mut project.slice_config;
+        let post_processing = &mut project.post_processing;
 
         Some(match self {
             Self::Mode(mode) => Self::Mode(mem::replace(&mut slice_config.mode, mode)),
@@ -336,8 +337,9 @@ impl ModelAction {
     /// Undoes the model action on the specified model, returning an action to
     /// revert the undo (redo) if the model was found.
     pub fn undo(self, app: &mut App, model_id: ModelId) -> Option<ModelAction> {
-        let model = app.project.models.iter_mut().find(|x| x.id == model_id)?;
-        let platform_size = &app.project.slice_config.platform_size;
+        let AppCore { project, .. } = &mut app.core;
+        let model = project.models.iter_mut().find(|x| x.id == model_id)?;
+        let platform_size = &project.slice_config.platform_size;
 
         Some(match self {
             Self::Name(name) => Self::Name(mem::replace(&mut model.name, name)),
@@ -365,11 +367,11 @@ impl ModelAction {
                 Self::Collection(mem::replace(&mut model.collection, collection))
             }
             Self::Move(index, collection) => {
-                let current_index = app.project.models.iter().position(|x| x.id == model_id)?;
-                let mut model = app.project.models.remove(current_index);
+                let current_index = project.models.iter().position(|x| x.id == model_id)?;
+                let mut model = project.models.remove(current_index);
                 let old_collection = mem::replace(&mut model.collection, collection);
-                let index = index.min(app.project.models.len());
-                app.project.models.insert(index, model);
+                let index = index.min(project.models.len());
+                project.models.insert(index, model);
                 return Some(Self::Move(current_index, old_collection));
             }
         })

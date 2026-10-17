@@ -1,5 +1,4 @@
 use common::color::SRgb;
-use egui_wgpu::ScreenDescriptor;
 use nalgebra::Vector2;
 use wgpu::{
     BindGroup, Buffer, BufferUsages, CommandEncoder, Device, Origin3d, RenderPass, Sampler,
@@ -8,7 +7,7 @@ use wgpu::{
 };
 
 use crate::{
-    core::App,
+    core::AppCore,
     render::{
         Gcx,
         consts::{FILTERING_SAMPLER, NONFILTERING_SAMPLER},
@@ -22,23 +21,23 @@ use crate::{
                 lighting::LightingPass,
                 ssao::SsaoPass,
             },
-            pick::ModelPicker,
         },
     },
 };
 
 mod bindings;
 mod pass;
-mod pick;
 mod preview;
 mod selected;
 pub use preview::process_previews;
 
+/// Renders the offscreen model preview the sliced panel downloads.
+///
+/// This used to also render the viewport; that is now a real bevy scene
+/// (`crate::render::scene`), so only the preview target is left.
 pub struct ModelPipeline {
-    viewport: Option<MultiStage>,
     preview: Option<MultiStage>,
 
-    picker: ModelPicker,
     base: BasePass,
     ssao: SsaoPass,
     blur: BlurPass,
@@ -51,12 +50,6 @@ pub struct ModelPipeline {
     filtering_sampler: Sampler,
 }
 
-#[derive(Clone, Copy)]
-pub enum Target {
-    Viewport,
-    Preview,
-}
-
 struct MultiStage {
     target_a: TextureView,
     target_b: TextureView,
@@ -66,7 +59,6 @@ struct MultiStage {
 
     // g buffer
     depth_target: TextureView,
-    model_target: TextureView,
     normal_target: TextureView,
     world_target: TextureView,
 
@@ -91,9 +83,8 @@ impl ModelPipeline {
         });
 
         Self {
-            viewport: None,
             preview: None,
-            picker: ModelPicker::new(device),
+
             base: BasePass::create(device, texture),
             ssao: SsaoPass::create(device),
             blur: BlurPass::create(device),
@@ -110,17 +101,13 @@ impl ModelPipeline {
     fn render(
         &mut self,
         encoder: &mut CommandEncoder,
-        app: &mut App,
-        target: Target,
+        app: &mut AppCore,
         background: Option<SRgb<f32>>,
     ) {
-        let multi = self.get_target(target).as_ref().unwrap();
+        let multi = self.preview.as_ref().unwrap();
         let index = &self.post_index_buffer;
 
-        match target {
-            Target::Viewport => self.base.paint(encoder, app, multi),
-            Target::Preview => self.base.paint_preview(encoder, app, multi),
-        }
+        self.base.paint_preview(encoder, app, multi);
         if app.config.render.ambient_occlusion.enabled {
             self.ssao.paint(encoder, multi, index, &multi.ssao);
             self.blur.paint(encoder, multi, index, &multi.blur);
@@ -149,37 +136,11 @@ impl ModelPipeline {
         }
     }
 
-    pub fn prepare(
-        &mut self,
-        gcx: &Gcx,
-        screen: &ScreenDescriptor,
-        encoder: &mut CommandEncoder,
-        app: &mut App,
-    ) {
-        let size = screen.size_in_pixels.into();
-        let occlusion_size = occlusion_size(app, size);
-        let view_projection = app.view_projection();
-
-        self.size_textures(gcx, app, Target::Viewport, screen.size_in_pixels.into());
-        let multi = self.viewport.as_mut().unwrap();
-        multi.base.prepare(gcx, app, &self.base);
-
-        self.ssao.prepare(gcx, app, view_projection);
-        self.blur.prepare(gcx, app, occlusion_size);
-        self.lighting.prepare(gcx, app, None);
-        self.fxaa.prepare(gcx, app, size);
-
-        self.render(encoder, app, Target::Viewport, None);
-
-        let multi = self.viewport.as_ref().unwrap();
-        self.picker.update(gcx, encoder, multi, app);
-    }
-
     pub fn prepare_preview(
         &mut self,
         gcx: &Gcx,
         encoder: &mut CommandEncoder,
-        app: &mut App,
+        app: &mut AppCore,
         size: Vector2<u32>,
     ) {
         let Some(Some(interactive)) =
@@ -195,7 +156,7 @@ impl ModelPipeline {
         let background = preview.background;
         let view = camera.view_projection_matrix(preview.projection, aspect);
 
-        self.size_textures(gcx, app, Target::Preview, size);
+        self.size_textures(gcx, app, size);
         let multi = self.preview.as_mut().unwrap();
         multi.base.prepare_preview(gcx, app, &self.base, view);
 
@@ -203,28 +164,14 @@ impl ModelPipeline {
         self.blur.prepare(gcx, app, occlusion_size(app, size));
         self.lighting.prepare(gcx, app, Some(&camera));
         self.fxaa.prepare(gcx, app, size);
-        self.render(encoder, app, Target::Preview, Some(background.to_srgb()));
+        self.render(encoder, app, Some(background.to_srgb()));
     }
 
     // Runs the post-processing pipeline, copying the data from the intermediary
     // buffers to the output surface.
-    pub fn paint(&self, render_pass: &mut RenderPass, _app: &mut App, target: Target) {
-        let bindings = &self.get_target(target).as_ref().unwrap().composite;
+    pub fn paint(&self, render_pass: &mut RenderPass, _app: &mut AppCore) {
+        let bindings = &self.preview.as_ref().unwrap().composite;
         self.composite
             .paint(render_pass, &self.post_index_buffer, bindings);
-    }
-
-    fn get_target_mut(&mut self, target: Target) -> &mut Option<MultiStage> {
-        match target {
-            Target::Viewport => &mut self.viewport,
-            Target::Preview => &mut self.preview,
-        }
-    }
-
-    fn get_target(&self, target: Target) -> &Option<MultiStage> {
-        match target {
-            Target::Viewport => &self.viewport,
-            Target::Preview => &self.preview,
-        }
     }
 }

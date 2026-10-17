@@ -126,7 +126,10 @@ pub fn update_check_if_scheduled(app: &mut App) {
             None => true,
         },
     };
-    scheduled.then(|| app.tasks.add(UpdateCheck::new(app)));
+    scheduled.then(|| {
+        let check = UpdateCheck::new(app);
+        app.tasks.add(check);
+    });
 }
 
 /// Returns how `a` compares to `b` using semver semantics.

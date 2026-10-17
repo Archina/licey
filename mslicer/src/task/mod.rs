@@ -6,7 +6,8 @@ use std::{
 use crate::{
     app_ref_type,
     core::{
-        config::Config, history::History, project::Project, slice::SliceOperation, state::UiState,
+        AppCore, config::Config, history::History, project::Project, slice::SliceOperation,
+        state::UiState,
     },
     interface::{panels::Panels, popup::PopupManager},
 };
@@ -110,19 +111,29 @@ impl TaskManager {
 
 impl<'a> TaskManagerRef<'a> {
     pub(super) fn poll(&mut self) {
-        let this = &mut self.app.tasks;
+        let AppCore {
+            tasks: this,
+            panels,
+            popup,
+            slice_operation,
+            state,
+            config,
+            project,
+            history,
+            ..
+        } = &mut self.app.core;
         while let Ok(pending) = this.task_queue.1.try_recv() {
             this.add_boxed(pending);
         }
 
         let mut app = TaskApp {
-            panels: &mut self.app.panels,
-            popup: &mut self.app.popup,
-            slice_operation: &mut self.app.slice_operation,
-            state: &mut self.app.state,
-            config: &mut self.app.config,
-            project: &mut self.app.project,
-            history: &mut self.app.history,
+            panels,
+            popup,
+            slice_operation,
+            state,
+            config,
+            project,
+            history,
         };
 
         let mut i = 0;
