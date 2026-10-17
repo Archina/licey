@@ -10,12 +10,14 @@
 //! * The mslicer [`Camera`] stays the source of truth for the viewpoint. The bevy camera mirrors
 //!   it exactly (`Transform::looking_at` plus a `PerspectiveProjection`/`OrthographicProjection`
 //!   built from the same numbers), in mslicer's Z-up world space.
-//! * `Model.mesh`'s `position`/`rotation`/`scale` fields stay authoritative and are applied by
-//!   setting [`GlobalTransform`] **directly** from `Mesh::transformation_matrix()`. mslicer
-//!   composes `T * S * R` while bevy's [`Transform`] is `T * R * S`, so the render transform must
-//!   never go through `Transform`. [`sync_scene`] therefore runs in `PostUpdate` *after* bevy's
-//!   transform propagation, which also keeps a freshly spawned entity's `GlobalTransform` from
-//!   being overwritten by the identity `Transform` that `Mesh3d` drags along.
+//! * `Model.mesh`'s `position`/`rotation`/`scale` fields stay authoritative. The exact render
+//!   transform is set on [`GlobalTransform`] **directly** from
+//!   `Mesh::transformation_matrix()`: mslicer composes `T * S * R` while bevy's [`Transform`] is
+//!   `T * R * S`, so the render transform must never go through `Transform`. [`sync_scene`] runs
+//!   in `PostUpdate` *after* bevy's transform propagation so that direct write survives the frame,
+//!   and it also maintains `Transform` from the same fields — purely so interactive tools start
+//!   from the real transform. bevy's transform gizmo snapshots and writes `Transform`, so leaving
+//!   it at the identity `Mesh3d` spawns would make every drag start from the origin.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -41,7 +43,7 @@ use common::{
     units::{Milimeter, Milimeters},
 };
 use egui::Theme;
-use nalgebra::{Matrix4, Vector2, Vector3};
+use nalgebra::{Matrix4, Rotation3, UnitQuaternion, Vector2, Vector3};
 use slicer::mesh::{Mesh as SlicerMesh, MeshId};
 
 use crate::{
@@ -313,6 +315,7 @@ fn sync_scene(
             &SceneNode,
             Option<&Mesh3d>,
             Option<&SceneMesh>,
+            &mut Transform,
             &mut GlobalTransform,
             Option<&MeshMaterial3d<StandardMaterial>>,
             Option<&MeshMaterial3d<ModelMaterial>>,
@@ -365,10 +368,12 @@ fn sync_scene(
         .unwrap_or(f32::from_bits(u32::MAX));
 
     let mut live = HashSet::new();
-    for (entity, node, mesh, scene_mesh, mut transform, material, model_material) in &mut nodes {
+    for (entity, node, mesh, scene_mesh, mut local, mut transform, material, model_material) in
+        &mut nodes
+    {
         let current = scene_mesh.map(|x| x.0);
 
-        let (geometry, appearance, target) = match *node {
+        let (geometry, appearance, local_transform, target) = match *node {
             SceneNode::Model(id) => {
                 // Read the hover state before borrowing the model out of the project.
                 let hovered_face = match app.state.hovered_geometry {
@@ -412,6 +417,7 @@ fn sync_scene(
                 (
                     geometry,
                     appearance,
+                    model_transform(&model.mesh),
                     global_transform(model.mesh.transformation_matrix()),
                 )
             }
@@ -459,6 +465,7 @@ fn sync_scene(
                 (
                     geometry,
                     appearance,
+                    model_transform(mesh),
                     global_transform(mesh.transformation_matrix()),
                 )
             }
@@ -477,6 +484,7 @@ fn sync_scene(
                 (
                     geometry,
                     Appearance::Standard(Color::WHITE),
+                    Transform::default(),
                     GlobalTransform::IDENTITY,
                 )
             }
@@ -489,6 +497,7 @@ fn sync_scene(
                 (
                     Geometry::Lines(handle, lines),
                     Appearance::Standard(line_color(app.config.ui.theme)),
+                    Transform::default(),
                     GlobalTransform::IDENTITY,
                 )
             }
@@ -498,6 +507,7 @@ fn sync_scene(
                 (
                     Geometry::Lines(handle, lines),
                     Appearance::Standard(Color::srgb(0.5, 0.5, 1.0)),
+                    Transform::default(),
                     GlobalTransform::IDENTITY,
                 )
             }
@@ -512,6 +522,7 @@ fn sync_scene(
                 (
                     Geometry::Lines(handle, lines),
                     Appearance::Standard(Color::srgb(1.0, 0.0, 0.0)),
+                    Transform::default(),
                     GlobalTransform::IDENTITY,
                 )
             }
@@ -528,6 +539,7 @@ fn sync_scene(
                 (
                     Geometry::Keep,
                     Appearance::Standard(Color::srgba(1.0, 0.0, 0.0, 0.25)),
+                    Transform::from_translation(Vec3::new(target.x, target.y, target.z)),
                     GlobalTransform::from_translation(Vec3::new(target.x, target.y, target.z)),
                 )
             }
@@ -541,6 +553,12 @@ fn sync_scene(
                     .insert((Mesh3d(handle), SceneMesh(id)));
             }
             Geometry::Lines(handle, lines) => rebuild_lines(&mut meshes, &handle, lines),
+        }
+        // bevy's transform gizmo seeds its drag from (and writes into) `Transform`, so that
+        // component has to mirror the authoritative fields even though rendering uses the exact
+        // `T * S * R` matrix through `GlobalTransform`.
+        if *local != local_transform {
+            *local = local_transform;
         }
         *transform = target;
 
@@ -823,6 +841,24 @@ fn normal_lines(models: &[Model]) -> Vec<[f32; 3]> {
     }
 
     lines
+}
+
+/// The authoritative `position`/`rotation`/`scale` fields as a bevy [`Transform`].
+///
+/// Rendering never uses this: the exact `T * S * R` matrix goes to [`GlobalTransform`] directly
+/// (see the module docs). It exists because bevy's transform gizmo snapshots and writes
+/// `Transform`, so that component must mirror the fields or every drag would start from the
+/// identity transform and reset the model.
+fn model_transform(mesh: &SlicerMesh) -> Transform {
+    let (position, rotation, scale) = (mesh.position(), mesh.rotation(), mesh.scale());
+    let rotation = Rotation3::from_euler_angles(rotation.x, rotation.y, rotation.z);
+    let coords = UnitQuaternion::from_rotation_matrix(&rotation).quaternion().coords;
+
+    Transform {
+        translation: Vec3::new(position.x, position.y, position.z),
+        rotation: Quat::from_xyzw(coords[0], coords[1], coords[2], coords[3]),
+        scale: Vec3::new(scale.x, scale.y, scale.z),
+    }
 }
 
 fn global_transform(matrix: &Matrix4<f32>) -> GlobalTransform {
