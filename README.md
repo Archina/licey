@@ -22,6 +22,15 @@ You can download stable builds for Linux, Windows, or MacOS from the GitHub [Rel
 Stable Linux builds are also available on [Flathub][flathub] and [Nixpkgs][nixpkgs].
 You can find the latest development builds on [Github Actions][actions-success], just open the latest workflow run and download the correct artifact for your system.
 
+This fork ships a `flake.nix`, so the bevy port can be installed straight from the repository:
+
+```sh
+nix profile add github:Archina/licey/feature_egui.36
+mslicer
+```
+
+The flake builds a release binary and wraps it with the libraries winit and wgpu `dlopen` at runtime. The first build compiles all of bevy (~20 min); afterwards it is cached by Nix.
+
 [![][flathub-badge]][flathub]
 [![][nixpkgs-badge]][nixpkgs]
 
