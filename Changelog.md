@@ -12,6 +12,8 @@
   - The model shader is a bevy material now, keeping overhang shading, the render styles, per-face
     selection, the out-of-bounds tint and the back-face colour
   - The sliced-panel preview and the basis widget keep their existing wgpu pipelines
+- Fix a crash when resizing the window: the viewport camera kept pointing at the render image
+  that the resize replaced
 - Merge lift and retract distance settings.
   In practice they should always be the same and the setting was only supported by `.goo`
 - Fix auto-layout's previously incorrect handling of scaled and rotated models

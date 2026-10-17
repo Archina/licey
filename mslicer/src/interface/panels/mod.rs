@@ -96,7 +96,9 @@ impl Panels {
         };
 
         let previous_width = split.rect.width();
-        let min_size = 325.0 / window_width;
+        // Windows narrower than the sidebar's minimum would ask for a fraction above 1.0, which
+        // `f32::clamp` rejects outright; fall back to "the sidebar takes the whole width".
+        let min_size = (325.0 / window_width).min(1.0);
         let change = previous_width / window_width;
         split.fraction = if node.is_left() {
             1.0 - (1.0 - split.fraction) * change

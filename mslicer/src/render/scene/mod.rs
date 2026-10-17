@@ -151,7 +151,7 @@ fn ensure_scene(
     mut images: ResMut<Assets<Image>>,
     mut egui_textures: ResMut<EguiUserTextures>,
     nodes: Query<(Entity, &SceneNode)>,
-    camera: Query<Entity, With<ViewportCamera>>,
+    mut camera: Query<&mut RenderTarget, With<ViewportCamera>>,
 ) {
     let Some(mut app) = app else {
         return;
@@ -161,11 +161,9 @@ fn ensure_scene(
     // --- the image the viewport camera renders into ---------------------------
     let target = app.state.viewport.target_size;
     let size = Vector2::new(target.x.max(1), target.y.max(1));
+    let mut replaced = None;
     if app.state.viewport.image.is_none() || app.state.viewport.size != size {
-        if let Some(old) = app.state.viewport.image.take() {
-            egui_textures.remove_image(old.id());
-            images.remove(old.id());
-        }
+        replaced = app.state.viewport.image.take();
 
         let background = theme_background(app.config.ui.theme);
         let srgb = background.to_srgba();
@@ -202,6 +200,26 @@ fn ensure_scene(
     };
 
     // --- the camera -----------------------------------------------------------
+    // The camera must never point at a removed image: `camera_system` looks the render target up
+    // in `Assets<Image>` and errors out when the handle no longer names an asset. Recreating the
+    // image on a resize therefore has to move the camera with it, before the old asset is
+    // dropped and before anything renders with the new one.
+    let render_target = RenderTarget::Image(ImageRenderTarget {
+        handle: image.clone(),
+        scale_factor: 1.0,
+    });
+    for mut bevy_target in &mut camera {
+        let current = bevy_target.as_image().map(|handle| handle.id());
+        if current != Some(image.id()) {
+            *bevy_target = render_target.clone();
+        }
+    }
+
+    if let Some(old) = replaced {
+        egui_textures.remove_image(old.id());
+        images.remove(old.id());
+    }
+
     if camera.is_empty() {
         let projection = camera_projection(
             &app.camera,
