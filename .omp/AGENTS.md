@@ -20,17 +20,19 @@ egui/eframe interface runs inside `bevy_egui`, so the UI is still egui.
 
 ## Verifying rendering changes
 
-There is no synthetic-input tooling on this machine (no xdotool/ydotool/wtype), so the renderer is
-only observable as pixels. Use `scripts/viewport-smoke.sh` (also exposed as the `mslicer_viewport`
-tool and described by the `mslicer-viewport` skill):
+The renderer is only observable as pixels (`spectacle`) and there is no synthetic-input shim in
+the app. Use `scripts/viewport-smoke.sh` (also the `mslicer_viewport` tool) for stills and
+`scripts/ui-input.sh` to drive the pointer and keyboard:
 
 ```
 scripts/viewport-smoke.sh --compare-empty   # build, launch, screenshot, diff, scan the log
+scripts/ui-input.sh key ctrl+t              # load the teapot (all shortcuts are Ctrl-based)
+scripts/ui-input.sh drag 1000 250 1180 300  # orbit the camera
 ```
 
-For interaction-dependent behaviour (gizmo drags, hover), add temporary instrumentation to the app
-(an extra arg, a once-per-frame system, a log line), verify, then remove it and re-grep for
-residue before committing.
+Input goes through `dotool` (pointer, plain keys) and `ydotool` (chords, needs `ydotoold` from
+`devenv up`); `wtype` is installed but KWin lacks the virtual-keyboard protocol. The
+`mslicer-viewport` skill has the details and the measured geometry.
 
 ## bevy port map
 

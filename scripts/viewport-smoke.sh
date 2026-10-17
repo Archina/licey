@@ -71,7 +71,11 @@ cleanup() {
 trap cleanup EXIT
 
 start_app() {
-    ( cd "$repo" && setsid ./target/debug/mslicer "$@" >"$log" 2>&1 & echo $! >"$pidfile" )
+    # `exec` so $! is setsid's pid, which is the app's pid: `setsid` does not
+    # fork when it is not a process-group leader, and the app leads its own
+    # session either way.
+    ( cd "$repo" && exec setsid ./target/debug/mslicer "$@" >"$log" 2>&1 ) &
+    echo $! >"$pidfile"
 }
 
 stop_app() {
@@ -84,7 +88,9 @@ stop_app() {
         sleep 0.1
     done
     kill -KILL -- "-$pid" 2>/dev/null || true
-    pkill -f "$repo/target/debug/mslicer" 2>/dev/null || true
+    # The command line is relative (`./target/debug/mslicer`), so match on the
+    # suffix: an absolute-path pattern silently kills nothing.
+    pkill -f "target/debug/mslicer" 2>/dev/null || true
     rm -f "$pidfile"
 }
 
@@ -101,6 +107,12 @@ capture() {
         echo "error: $scene: app exited before the screenshot" >&2
         tail -20 "$log" >&2
         return 1
+    fi
+    # Park the pointer outside the window: a hovered viewport draws a tooltip,
+    # which would make the diff depend on where the last interaction left it.
+    if command -v dotool >/dev/null 2>&1; then
+        printf 'mouseto 0.02 0.02\n' | dotool >/dev/null 2>&1 || true
+        sleep 0.5
     fi
     rm -f "$shot"
     spectacle -b -n -f -o "$shot" >/dev/null 2>&1

@@ -34,6 +34,19 @@ in
     udev
     alsa-lib-with-plugins
     gcc
+
+    # Synthetic input for verifying the UI headlessly. On this KWin Wayland
+    # session only `dotool` works end to end: it writes to /dev/uinput (the
+    # uaccess ACL grants the logged-in user write access) and supports
+    # press/release, so it can drag. `wtype` needs zwp_virtual_keyboard_v1,
+    # which KWin does not implement; `ydotool` needs a running ydotoold and
+    # cannot hold a button across moves; `kdotool` covers window focus and
+    # geometry through KWin scripting. All four are kept so the setup also
+    # works on wlroots compositors. See scripts/ui-input.sh.
+    wtype
+    ydotool
+    dotool
+    kdotool
   ]
   ++ runtimeLibraries;
 
@@ -46,6 +59,10 @@ in
 
   # https://devenv.sh/processes/
   # processes.dev.exec = "${lib.getExe pkgs.watchexec} -n -- ls -la";
+
+  # ydotool only talks to a daemon; `devenv up` starts it on the default socket
+  # ($XDG_RUNTIME_DIR/.ydotool_socket), which is where the client looks.
+  processes.ydotoold.exec = "ydotoold";
 
   # https://devenv.sh/services/
   # services.postgres.enable = true;
