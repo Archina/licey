@@ -90,7 +90,7 @@ stop_app() {
     kill -KILL -- "-$pid" 2>/dev/null || true
     # The command line is relative (`./target/debug/mslicer`), so match on the
     # suffix: an absolute-path pattern silently kills nothing.
-    pkill -f "target/debug/mslicer" 2>/dev/null || true
+    pkill -x mslicer 2>/dev/null || true
     rm -f "$pidfile"
 }
 
