@@ -12,7 +12,7 @@ use wgpu::{
 use crate::{
     include_shader,
     render::{
-        Gcx, VERTEX_BUFFER_LAYOUT,
+        Gcx,
         consts::{
             BASE_UNIFORM_DESCRIPTOR, DEPTH_STENCIL_STATE, STORAGE_BIND_GROUP_LAYOUT_ENTRY,
             UNIFORM_BIND_GROUP_LAYOUT_ENTRY,
@@ -82,7 +82,9 @@ impl SlicePreviewPipeline {
             vertex: VertexState {
                 module: &shader,
                 entry_point: None,
-                buffers: &[Some(VERTEX_BUFFER_LAYOUT)],
+                // The vertex stage only reads `@builtin(vertex_index)`; declaring a vertex
+                // buffer here makes wgpu require one to be bound at draw time, which fails.
+                buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(FragmentState {
